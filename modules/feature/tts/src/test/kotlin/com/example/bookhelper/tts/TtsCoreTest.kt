@@ -86,8 +86,8 @@ class TtsCoreTest {
     }
 
     @Test
-    fun bundledModelsIncludeOnlyKokoroEn() {
-        assertEquals(1, BundledTtsModels.All.size)
+    fun bundledModelsIncludeBundledKokoroAndPiper() {
+        assertEquals(2, BundledTtsModels.All.size)
         assertEquals(BundledTtsModels.KokoroEnV019.id, BundledTtsModels.All.first().id)
         assertEquals(BundledTtsModels.KokoroEnV019.id, BundledTtsModels.DefaultEnglish.id)
         assertEquals(LocalTtsModelKind.KOKORO, BundledTtsModels.KokoroEnV019.modelKind)
@@ -95,6 +95,12 @@ class TtsCoreTest {
         assertEquals(
             setOf("model.onnx", "voices.bin", "tokens.txt", "espeak-ng-data/"),
             BundledTtsModels.KokoroEnV019.requiredInstallFiles,
+        )
+        assertEquals(LocalTtsModelKind.PIPER_DERIVED, BundledTtsModels.PiperEnUsLibriTtsRMedium.modelKind)
+        assertEquals(LocalTtsModelFormat.PIPER_ONNX, BundledTtsModels.PiperEnUsLibriTtsRMedium.modelFormat)
+        assertEquals(
+            setOf("model.onnx", "tokens.txt", "espeak-ng-data/"),
+            BundledTtsModels.PiperEnUsLibriTtsRMedium.requiredInstallFiles,
         )
         assertNull(BundledTtsModels.findById("unknown-model"))
     }
@@ -115,7 +121,7 @@ class TtsCoreTest {
             setOf("model.onnx", "tokens.txt", "espeak-ng-data/"),
             model.requiredInstallFiles,
         )
-        assertTrue(model.isDownloadedModel)
+        assertFalse(model.isDownloadedModel)
     }
 
     @Test

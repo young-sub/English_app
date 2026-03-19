@@ -69,7 +69,22 @@ object BundledTtsModels {
         modelFormat = LocalTtsModelFormat.KOKORO_ONNX,
     )
 
-    val All: List<BundledTtsModel> = listOf(KokoroEnV019)
+    val PiperEnUsLibriTtsRMedium = BundledTtsModel(
+        id = "piper-en_us-libritts_r-medium",
+        displayName = "Piper EN LibriTTS-R Medium",
+        shortLabel = "Piper LibriTTS-R",
+        assetDirectory = "$AssetRoot/piper-en_US-libritts_r-medium",
+        speakers = listOf(
+            LocalSpeakerProfile(0, "speaker_0", "Speaker 0", SpeakerGender.UNKNOWN, "US"),
+        ),
+        modelKind = LocalTtsModelKind.PIPER_DERIVED,
+        modelFormat = LocalTtsModelFormat.PIPER_ONNX,
+    )
+
+    val All: List<BundledTtsModel> = listOf(
+        KokoroEnV019,
+        PiperEnUsLibriTtsRMedium,
+    )
 
     val DefaultEnglish: BundledTtsModel = KokoroEnV019
 
