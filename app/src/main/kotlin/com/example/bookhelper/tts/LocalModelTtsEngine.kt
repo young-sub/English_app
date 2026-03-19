@@ -17,6 +17,8 @@ import java.util.LinkedHashSet
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
@@ -107,19 +109,34 @@ class LocalModelTtsEngine {
 
                         val tts = offlineTts ?: error("Offline TTS is not initialized")
                         val descriptor = loadedModelDescriptor ?: error("Local model descriptor is not initialized")
-                        generateSegmentedAudio(
-                            tts = tts,
-                            descriptor = descriptor,
-                            segments = segments,
-                            speakerId = speakerId,
-                            speed = normalizedSpeed,
+                        if (segments.size > 1) {
+                            generateAndPlayProgressively(
+                                tts = tts,
+                                descriptor = descriptor,
+                                segments = segments,
+                                speakerId = speakerId,
+                                speed = normalizedSpeed,
+                                utteranceId = utteranceId,
+                                onFailure = onFailure,
+                            )
+                            null
+                        } else {
+                            generateSegmentedAudio(
+                                tts = tts,
+                                descriptor = descriptor,
+                                segments = segments,
+                                speakerId = speakerId,
+                                speed = normalizedSpeed,
+                            )
+                        }
+                    }
+                    if (generatedAudio != null) {
+                        enqueuePlayback(
+                            utteranceId = utteranceId,
+                            generatedAudio = generatedAudio,
+                            onFailure = onFailure,
                         )
                     }
-                    enqueuePlayback(
-                        utteranceId = utteranceId,
-                        generatedAudio = generatedAudio,
-                        onFailure = onFailure,
-                    )
                 }.onFailure {
                     handleSynthesisOrPlaybackFailure(
                         throwable = it,
@@ -362,6 +379,73 @@ class LocalModelTtsEngine {
         )
     }
 
+    private fun generateAndPlayProgressively(
+        tts: OfflineTts,
+        descriptor: LocalModelDescriptor,
+        segments: List<String>,
+        speakerId: Int,
+        speed: Float,
+        utteranceId: Long,
+        onFailure: (() -> Unit)?,
+    ) {
+        require(segments.isNotEmpty()) { "Segments must not be empty" }
+
+        val firstGenerateStartNs = System.nanoTime()
+        val firstAudio = generateAudio(
+            tts = tts,
+            descriptor = descriptor,
+            text = segments.first(),
+            speakerId = speakerId,
+            speed = speed,
+        )
+        val firstChunkGenerationMs = nanosToMillis(System.nanoTime() - firstGenerateStartNs)
+        val progressiveStream = ProgressiveAudioStream()
+        updatePlaybackTelemetry(
+            firstChunkGenerationMs = firstChunkGenerationMs,
+            segmentCount = segments.size,
+            generatedSampleRate = firstAudio.sampleRate,
+            generatedPcmNonEmpty = firstAudio.samples.isNotEmpty() && firstAudio.sampleRate > 0,
+        )
+        enqueueProgressivePlayback(
+            utteranceId = utteranceId,
+            firstAudio = firstAudio,
+            progressiveStream = progressiveStream,
+            onFailure = onFailure,
+        )
+
+        var totalGenerationMs = firstChunkGenerationMs
+        var totalSampleCount = firstAudio.samples.size
+        try {
+            for (segment in segments.drop(1)) {
+                if (isUtteranceSuperseded(utteranceId)) {
+                    progressiveStream.finish()
+                    return
+                }
+                val generateStartNs = System.nanoTime()
+                val audio = generateAudio(
+                    tts = tts,
+                    descriptor = descriptor,
+                    text = segment,
+                    speakerId = speakerId,
+                    speed = speed,
+                )
+                totalGenerationMs += nanosToMillis(System.nanoTime() - generateStartNs)
+                totalSampleCount += audio.samples.size
+                progressiveStream.offer(audio)
+            }
+            progressiveStream.finish()
+            updatePlaybackTelemetry(
+                generationMs = totalGenerationMs,
+                generatedSampleCount = totalSampleCount,
+                generatedSampleRate = firstAudio.sampleRate,
+                generatedPcmNonEmpty = totalSampleCount > 0 && firstAudio.sampleRate > 0,
+            )
+        } catch (throwable: Throwable) {
+            progressiveStream.fail(throwable)
+            throw throwable
+        }
+    }
+
     private fun generateSegmentedAudio(
         tts: OfflineTts,
         descriptor: LocalModelDescriptor,
@@ -460,12 +544,16 @@ class LocalModelTtsEngine {
         speed: Float,
     ) = tts.generate(
         text = text,
-        sid = when (descriptor.modelKind) {
-            LocalTtsModelKind.KOKORO -> speakerId.coerceIn(KOKORO_MIN_SPEAKER_ID, KOKORO_MAX_SPEAKER_ID)
-            LocalTtsModelKind.PIPER_DERIVED -> 0
-        },
+        sid = normalizeSpeakerIdForGeneration(descriptor, speakerId),
         speed = speed,
     )
+
+    private fun normalizeSpeakerIdForGeneration(descriptor: LocalModelDescriptor, speakerId: Int): Int {
+        return when (descriptor.modelKind) {
+            LocalTtsModelKind.KOKORO -> speakerId.coerceIn(KOKORO_MIN_SPEAKER_ID, KOKORO_MAX_SPEAKER_ID)
+            LocalTtsModelKind.PIPER_DERIVED -> speakerId.coerceAtLeast(0)
+        }
+    }
 
     private fun extractAudioSamples(audio: com.k2fsa.sherpa.onnx.GeneratedAudio): ExtractedAudio {
         return ExtractedAudio(samples = audio.samples, sampleRate = audio.sampleRate)
@@ -511,6 +599,247 @@ class LocalModelTtsEngine {
         throw IllegalStateException(
             "Failed local playback: AudioTrack write failed for PCM_FLOAT static/stream and PCM_16BIT static/stream",
         )
+    }
+
+    private fun enqueueProgressivePlayback(
+        utteranceId: Long,
+        firstAudio: com.k2fsa.sherpa.onnx.GeneratedAudio,
+        progressiveStream: ProgressiveAudioStream,
+        onFailure: (() -> Unit)?,
+    ) {
+        runCatching {
+            playbackExecutor.execute {
+                if (isUtteranceSuperseded(utteranceId)) {
+                    return@execute
+                }
+                runCatching {
+                    playGeneratedAudioProgressively(
+                        firstAudio = firstAudio,
+                        progressiveStream = progressiveStream,
+                        utteranceId = utteranceId,
+                    )
+                }.onFailure {
+                    handleSynthesisOrPlaybackFailure(
+                        throwable = it,
+                        logMessage = "Local TTS progressive playback failed",
+                        onFailure = onFailure,
+                    )
+                }.also {
+                    logPlaybackTelemetryOnce()
+                }
+            }
+        }.onFailure {
+            progressiveStream.fail(it)
+            handleSynthesisOrPlaybackFailure(
+                throwable = it,
+                logMessage = "Failed to enqueue local TTS progressive playback",
+                onFailure = onFailure,
+            )
+            logPlaybackTelemetryOnce()
+        }
+    }
+
+    private fun playGeneratedAudioProgressively(
+        firstAudio: com.k2fsa.sherpa.onnx.GeneratedAudio,
+        progressiveStream: ProgressiveAudioStream,
+        utteranceId: Long,
+    ) {
+        if (isUtteranceSuperseded(utteranceId)) {
+            return
+        }
+        stop()
+        if (isUtteranceSuperseded(utteranceId)) {
+            return
+        }
+
+        if (tryPlayProgressiveFloat(firstAudio, progressiveStream, utteranceId)) {
+            return
+        }
+        if (tryPlayProgressivePcm16(firstAudio, progressiveStream, utteranceId)) {
+            return
+        }
+
+        val fallback = progressiveStream.collectAll(firstAudio)
+        playGeneratedAudio(mergeGeneratedAudio(fallback), utteranceId)
+    }
+
+    private fun tryPlayProgressiveFloat(
+        firstAudio: com.k2fsa.sherpa.onnx.GeneratedAudio,
+        progressiveStream: ProgressiveAudioStream,
+        utteranceId: Long,
+    ): Boolean {
+        val sampleRate = firstAudio.sampleRate
+        val streamCreateStartNs = System.nanoTime()
+        val streamTrack = createStreamTrack(sampleRate = sampleRate, encoding = AudioFormat.ENCODING_PCM_FLOAT)
+        val streamCreateMs = nanosToMillis(System.nanoTime() - streamCreateStartNs)
+        if (streamTrack == null) {
+            updatePlaybackTelemetry(
+                audioTrackMode = "pcm_float_stream_progressive",
+                audioTrackInitialized = false,
+                audioTrackCreateMs = streamCreateMs,
+            )
+            return false
+        }
+
+        synchronized(trackLock) {
+            activeTrack = streamTrack
+        }
+        try {
+            var totalFrames = 0
+            var totalWriteMs = 0.0
+            beginPlaybackTelemetry(totalFrames = 0, sampleRate = sampleRate)
+            streamTrack.play()
+
+            fun writeChunk(chunk: FloatArray): Boolean {
+                val writeStartNs = System.nanoTime()
+                val written = writeFloatSamplesStreaming(streamTrack, chunk, utteranceId)
+                totalWriteMs += nanosToMillis(System.nanoTime() - writeStartNs)
+                if (written != chunk.size) {
+                    updatePlaybackTelemetry(
+                        totalFrames = totalFrames,
+                        audioTrackMode = "pcm_float_stream_progressive",
+                        audioTrackInitialized = true,
+                        audioTrackCreateMs = streamCreateMs,
+                        audioWriteMs = totalWriteMs,
+                        audioWriteFrames = totalFrames,
+                        audioWriteSucceeded = false,
+                    )
+                    return false
+                }
+                totalFrames += written
+                updatePlaybackTelemetry(
+                    totalFrames = totalFrames,
+                    audioTrackMode = "pcm_float_stream_progressive",
+                    audioTrackInitialized = true,
+                    audioTrackCreateMs = streamCreateMs,
+                    audioWriteMs = totalWriteMs,
+                    audioWriteFrames = totalFrames,
+                )
+                return true
+            }
+
+            if (!writeChunk(firstAudio.samples)) {
+                finishPlaybackTelemetry(completed = false, timedOut = false, timeoutCause = "float_stream_progressive_write_failed")
+                return false
+            }
+
+            while (true) {
+                when (val item = progressiveStream.pollNext(utteranceId)) {
+                    null -> {
+                        finishPlaybackTelemetry(completed = false, timedOut = false, timeoutCause = "superseded")
+                        return false
+                    }
+                    is ProgressiveAudioItem.Audio -> if (!writeChunk(item.audio.samples)) {
+                        finishPlaybackTelemetry(completed = false, timedOut = false, timeoutCause = "float_stream_progressive_write_failed")
+                        return false
+                    }
+                    is ProgressiveAudioItem.Failure -> throw item.throwable
+                    ProgressiveAudioItem.Complete -> {
+                        updatePlaybackTelemetry(audioWriteSucceeded = totalFrames > 0, totalFrames = totalFrames)
+                        waitForPlaybackCompletion(streamTrack, totalFrames, sampleRate, utteranceId)
+                        return true
+                    }
+                }
+            }
+        } finally {
+            streamTrack.stopQuietly()
+            streamTrack.releaseQuietly()
+            synchronized(trackLock) {
+                if (activeTrack === streamTrack) {
+                    activeTrack = null
+                }
+            }
+        }
+    }
+
+    private fun tryPlayProgressivePcm16(
+        firstAudio: com.k2fsa.sherpa.onnx.GeneratedAudio,
+        progressiveStream: ProgressiveAudioStream,
+        utteranceId: Long,
+    ): Boolean {
+        val sampleRate = firstAudio.sampleRate
+        val streamCreateStartNs = System.nanoTime()
+        val streamTrack = createStreamTrack(sampleRate = sampleRate, encoding = AudioFormat.ENCODING_PCM_16BIT)
+        val streamCreateMs = nanosToMillis(System.nanoTime() - streamCreateStartNs)
+        if (streamTrack == null) {
+            updatePlaybackTelemetry(
+                audioTrackMode = "pcm16_stream_progressive",
+                audioTrackInitialized = false,
+                audioTrackCreateMs = streamCreateMs,
+            )
+            return false
+        }
+
+        synchronized(trackLock) {
+            activeTrack = streamTrack
+        }
+        try {
+            var totalFrames = 0
+            var totalWriteMs = 0.0
+            beginPlaybackTelemetry(totalFrames = 0, sampleRate = sampleRate)
+            streamTrack.play()
+
+            fun writeChunk(chunk: FloatArray): Boolean {
+                val pcm16 = convertFloatToPcm16(chunk)
+                val writeStartNs = System.nanoTime()
+                val written = writePcm16SamplesStreaming(streamTrack, pcm16, utteranceId)
+                totalWriteMs += nanosToMillis(System.nanoTime() - writeStartNs)
+                if (written != pcm16.size) {
+                    updatePlaybackTelemetry(
+                        totalFrames = totalFrames,
+                        audioTrackMode = "pcm16_stream_progressive",
+                        audioTrackInitialized = true,
+                        audioTrackCreateMs = streamCreateMs,
+                        audioWriteMs = totalWriteMs,
+                        audioWriteFrames = totalFrames,
+                        audioWriteSucceeded = false,
+                    )
+                    return false
+                }
+                totalFrames += written
+                updatePlaybackTelemetry(
+                    totalFrames = totalFrames,
+                    audioTrackMode = "pcm16_stream_progressive",
+                    audioTrackInitialized = true,
+                    audioTrackCreateMs = streamCreateMs,
+                    audioWriteMs = totalWriteMs,
+                    audioWriteFrames = totalFrames,
+                )
+                return true
+            }
+
+            if (!writeChunk(firstAudio.samples)) {
+                finishPlaybackTelemetry(completed = false, timedOut = false, timeoutCause = "pcm16_stream_progressive_write_failed")
+                return false
+            }
+
+            while (true) {
+                when (val item = progressiveStream.pollNext(utteranceId)) {
+                    null -> {
+                        finishPlaybackTelemetry(completed = false, timedOut = false, timeoutCause = "superseded")
+                        return false
+                    }
+                    is ProgressiveAudioItem.Audio -> if (!writeChunk(item.audio.samples)) {
+                        finishPlaybackTelemetry(completed = false, timedOut = false, timeoutCause = "pcm16_stream_progressive_write_failed")
+                        return false
+                    }
+                    is ProgressiveAudioItem.Failure -> throw item.throwable
+                    ProgressiveAudioItem.Complete -> {
+                        updatePlaybackTelemetry(audioWriteSucceeded = totalFrames > 0, totalFrames = totalFrames)
+                        waitForPlaybackCompletion(streamTrack, totalFrames, sampleRate, utteranceId)
+                        return true
+                    }
+                }
+            }
+        } finally {
+            streamTrack.stopQuietly()
+            streamTrack.releaseQuietly()
+            synchronized(trackLock) {
+                if (activeTrack === streamTrack) {
+                    activeTrack = null
+                }
+            }
+        }
     }
 
     private fun tryPlayStaticFloat(samples: FloatArray, sampleRate: Int, utteranceId: Long): Boolean {
@@ -944,6 +1273,7 @@ class LocalModelTtsEngine {
         playbackTelemetryRef.updateAndGet { current ->
             current.copy(
                 startedAtElapsedMs = startedAtElapsedMs,
+                playbackStartDelayMs = startedAtElapsedMs - current.runnableStartedAtElapsedMs,
                 totalFrames = totalFrames,
                 sampleRate = sampleRate,
                 maxPlaybackHeadFrames = 0,
@@ -960,6 +1290,7 @@ class LocalModelTtsEngine {
         generationMs: Double? = null,
         firstChunkGenerationMs: Double? = null,
         segmentCount: Int? = null,
+        totalFrames: Int? = null,
         generatedSampleCount: Int? = null,
         generatedSampleRate: Int? = null,
         generatedPcmNonEmpty: Boolean? = null,
@@ -982,6 +1313,7 @@ class LocalModelTtsEngine {
                 generationMs = generationMs ?: current.generationMs,
                 firstChunkGenerationMs = firstChunkGenerationMs ?: current.firstChunkGenerationMs,
                 segmentCount = segmentCount ?: current.segmentCount,
+                totalFrames = totalFrames ?: current.totalFrames,
                 generatedSampleCount = generatedSampleCount ?: current.generatedSampleCount,
                 generatedSampleRate = generatedSampleRate ?: current.generatedSampleRate,
                 generatedPcmNonEmpty = generatedPcmNonEmpty ?: current.generatedPcmNonEmpty,
@@ -1010,7 +1342,7 @@ class LocalModelTtsEngine {
         val telemetry = playbackTelemetryRef.get()
         Log.i(
             TAG,
-            "LOCAL_TTS_TELEMETRY queueWaitMs=${telemetry.queueWaitMs} ensureLoadedMs=${telemetry.ensureLoadedMs} generationMs=${telemetry.generationMs} firstChunkGenerationMs=${telemetry.firstChunkGenerationMs} segmentCount=${telemetry.segmentCount} generatedPcmNonEmpty=${telemetry.generatedPcmNonEmpty} generatedSampleCount=${telemetry.generatedSampleCount} generatedSampleRate=${telemetry.generatedSampleRate} audioTrackMode=${telemetry.audioTrackMode} audioTrackInitialized=${telemetry.audioTrackInitialized} audioTrackCreateMs=${telemetry.audioTrackCreateMs} audioWriteMs=${telemetry.audioWriteMs} audioWriteFrames=${telemetry.audioWriteFrames} audioWriteSucceeded=${telemetry.audioWriteSucceeded} maxPlaybackHeadFrames=${telemetry.maxPlaybackHeadFrames} completed=${telemetry.completed} timedOut=${telemetry.timedOut} timeoutCause=${telemetry.timeoutCause} failureReason=${telemetry.failureReason}",
+            "LOCAL_TTS_TELEMETRY queueWaitMs=${telemetry.queueWaitMs} ensureLoadedMs=${telemetry.ensureLoadedMs} generationMs=${telemetry.generationMs} firstChunkGenerationMs=${telemetry.firstChunkGenerationMs} playbackStartDelayMs=${telemetry.playbackStartDelayMs} segmentCount=${telemetry.segmentCount} generatedPcmNonEmpty=${telemetry.generatedPcmNonEmpty} generatedSampleCount=${telemetry.generatedSampleCount} generatedSampleRate=${telemetry.generatedSampleRate} audioTrackMode=${telemetry.audioTrackMode} audioTrackInitialized=${telemetry.audioTrackInitialized} audioTrackCreateMs=${telemetry.audioTrackCreateMs} audioWriteMs=${telemetry.audioWriteMs} audioWriteFrames=${telemetry.audioWriteFrames} audioWriteSucceeded=${telemetry.audioWriteSucceeded} maxPlaybackHeadFrames=${telemetry.maxPlaybackHeadFrames} completed=${telemetry.completed} timedOut=${telemetry.timedOut} timeoutCause=${telemetry.timeoutCause} failureReason=${telemetry.failureReason}",
         )
     }
 
@@ -1046,6 +1378,7 @@ internal data class LocalPlaybackTelemetry(
     val runnableStartedAtElapsedMs: Long = 0L,
     val queueWaitMs: Long = 0L,
     val startedAtElapsedMs: Long = 0L,
+    val playbackStartDelayMs: Long = 0L,
     val ensureLoadedMs: Double = 0.0,
     val generationMs: Double = 0.0,
     val firstChunkGenerationMs: Double = 0.0,
@@ -1073,6 +1406,53 @@ private data class SegmentedAudioResult(
     val firstChunkGenerationMs: Double,
     val totalGenerationMs: Double,
 )
+
+private sealed class ProgressiveAudioItem {
+    data class Audio(val audio: com.k2fsa.sherpa.onnx.GeneratedAudio) : ProgressiveAudioItem()
+
+    data class Failure(val throwable: Throwable) : ProgressiveAudioItem()
+
+    data object Complete : ProgressiveAudioItem()
+}
+
+private class ProgressiveAudioStream {
+    private val queue = LinkedBlockingQueue<ProgressiveAudioItem>()
+
+    fun offer(audio: com.k2fsa.sherpa.onnx.GeneratedAudio) {
+        queue.offer(ProgressiveAudioItem.Audio(audio))
+    }
+
+    fun fail(throwable: Throwable) {
+        queue.offer(ProgressiveAudioItem.Failure(throwable))
+    }
+
+    fun finish() {
+        queue.offer(ProgressiveAudioItem.Complete)
+    }
+
+    fun pollNext(utteranceId: Long): ProgressiveAudioItem? {
+        while (true) {
+            val item = queue.poll(100, TimeUnit.MILLISECONDS)
+            if (item != null) {
+                return item
+            }
+            if (Thread.currentThread().isInterrupted()) {
+                return null
+            }
+        }
+    }
+
+    fun collectAll(firstAudio: com.k2fsa.sherpa.onnx.GeneratedAudio): List<com.k2fsa.sherpa.onnx.GeneratedAudio> {
+        val collected = mutableListOf(firstAudio)
+        while (true) {
+            when (val item = queue.take()) {
+                is ProgressiveAudioItem.Audio -> collected += item.audio
+                is ProgressiveAudioItem.Failure -> throw item.throwable
+                ProgressiveAudioItem.Complete -> return collected
+            }
+        }
+    }
+}
 
 internal fun synthesisSegments(text: String): List<String> {
     val normalized = text.trim()

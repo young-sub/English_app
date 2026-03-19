@@ -62,7 +62,7 @@ class LocalTtsPlaybackInstrumentedTest {
             val startMs = SystemClock.elapsedRealtime()
 
             val accepted = engine.speakAsync(
-                text = "Hi.",
+                text = "Hi. Hello there.",
                 speed = 1.0f,
                 onFailure = { playbackFailed.set(true) },
             )
@@ -82,7 +82,7 @@ class LocalTtsPlaybackInstrumentedTest {
             val finalMatches = countSpeechLikePlaybackConfigs(audioManager)
             Log.i(
                 TAG,
-                "LOCAL_TTS_PLAYBACK callbackDetected=${signal.callbackDetected} polledDetected=${signal.polledDetected} telemetryDetected=${signal.telemetryDetected} playbackFailed=${playbackFailed.get()} failureReason=$failureReason baselineMatches=$baselineMatches finalMatches=$finalMatches queueWaitMs=${telemetry.queueWaitMs} ensureLoadedMs=${telemetry.ensureLoadedMs} generationMs=${telemetry.generationMs} firstChunkGenerationMs=${telemetry.firstChunkGenerationMs} segmentCount=${telemetry.segmentCount} generatedPcmNonEmpty=${telemetry.generatedPcmNonEmpty} generatedSampleCount=${telemetry.generatedSampleCount} generatedSampleRate=${telemetry.generatedSampleRate} audioTrackMode=${telemetry.audioTrackMode} audioTrackInitialized=${telemetry.audioTrackInitialized} audioTrackCreateMs=${telemetry.audioTrackCreateMs} audioWriteMs=${telemetry.audioWriteMs} audioWriteFrames=${telemetry.audioWriteFrames} audioWriteSucceeded=${telemetry.audioWriteSucceeded} telemetryStartedAt=${telemetry.startedAtElapsedMs} telemetryMaxFrames=${telemetry.maxPlaybackHeadFrames} telemetryTotalFrames=${telemetry.totalFrames} telemetrySampleRate=${telemetry.sampleRate} telemetryCompleted=${telemetry.completed} telemetryTimedOut=${telemetry.timedOut} telemetryTimeoutCause=${telemetry.timeoutCause} elapsedMs=$elapsedMs",
+                "LOCAL_TTS_PLAYBACK callbackDetected=${signal.callbackDetected} polledDetected=${signal.polledDetected} telemetryDetected=${signal.telemetryDetected} playbackFailed=${playbackFailed.get()} failureReason=$failureReason baselineMatches=$baselineMatches finalMatches=$finalMatches queueWaitMs=${telemetry.queueWaitMs} ensureLoadedMs=${telemetry.ensureLoadedMs} generationMs=${telemetry.generationMs} firstChunkGenerationMs=${telemetry.firstChunkGenerationMs} playbackStartDelayMs=${telemetry.playbackStartDelayMs} segmentCount=${telemetry.segmentCount} generatedPcmNonEmpty=${telemetry.generatedPcmNonEmpty} generatedSampleCount=${telemetry.generatedSampleCount} generatedSampleRate=${telemetry.generatedSampleRate} audioTrackMode=${telemetry.audioTrackMode} audioTrackInitialized=${telemetry.audioTrackInitialized} audioTrackCreateMs=${telemetry.audioTrackCreateMs} audioWriteMs=${telemetry.audioWriteMs} audioWriteFrames=${telemetry.audioWriteFrames} audioWriteSucceeded=${telemetry.audioWriteSucceeded} telemetryStartedAt=${telemetry.startedAtElapsedMs} telemetryMaxFrames=${telemetry.maxPlaybackHeadFrames} telemetryTotalFrames=${telemetry.totalFrames} telemetrySampleRate=${telemetry.sampleRate} telemetryCompleted=${telemetry.completed} telemetryTimedOut=${telemetry.timedOut} telemetryTimeoutCause=${telemetry.timeoutCause} elapsedMs=$elapsedMs",
             )
 
             assertTrue(
@@ -97,6 +97,9 @@ class LocalTtsPlaybackInstrumentedTest {
                 "Expected playback head progress after fallback. maxPlaybackHeadFrames=${telemetry.maxPlaybackHeadFrames}, audioTrackMode=${telemetry.audioTrackMode}, failureReason=$failureReason",
                 telemetry.maxPlaybackHeadFrames > 0,
             )
+            assertTrue("Expected segmented playback path for multi-sentence text", telemetry.segmentCount > 1)
+            assertTrue("Expected total generation to exceed first chunk generation", telemetry.generationMs > telemetry.firstChunkGenerationMs)
+            assertTrue("Expected playback to start before total generation finished", telemetry.playbackStartDelayMs in 1..telemetry.generationMs.toLong())
             assertFalse("Local TTS playback should not trigger failure callback", playbackFailed.get())
         } finally {
             audioManager.unregisterAudioPlaybackCallback(callback)
