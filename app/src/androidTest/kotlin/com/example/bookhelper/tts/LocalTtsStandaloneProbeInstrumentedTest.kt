@@ -33,8 +33,14 @@ class LocalTtsStandaloneProbeInstrumentedTest {
             ?: DEFAULT_TIMEOUT_MS
 
         val installer = BundledTtsModelInstaller(context)
-        val model = BundledTtsModels.DefaultEnglish
-        val modelPath = installer.ensureInstalled(model).getOrThrow()
+        val requestedModelId = args.getString(ARG_MODEL_ID)?.trim().orEmpty().ifBlank { null }
+        val modelPathOverride = args.getString(ARG_MODEL_PATH)?.trim().orEmpty().ifBlank { null }
+        val model = if (modelPathOverride == null) {
+            resolveBundledModel(installer, requestedModelId)
+        } else {
+            BundledTtsModels.findById(requestedModelId) ?: BundledTtsModels.DefaultEnglish
+        }
+        val modelPath = modelPathOverride ?: installer.ensureInstalled(model).getOrThrow()
         val speakerId = args.getString(ARG_SPEAKER_ID)?.toIntOrNull()
             ?.coerceAtLeast(0)
             ?: model.defaultSpeakerId
@@ -119,6 +125,8 @@ class LocalTtsStandaloneProbeInstrumentedTest {
     private companion object {
         const val TAG = "LocalTtsStandaloneProbe"
         const val ARG_ENABLED = "localTtsProbeEnabled"
+        const val ARG_MODEL_ID = "localTtsModelId"
+        const val ARG_MODEL_PATH = "localTtsModelPath"
         const val ARG_TEXT = "localTtsText"
         const val ARG_SPEED = "localTtsSpeed"
         const val ARG_SPEAKER_ID = "localTtsSpeakerId"
@@ -126,5 +134,14 @@ class LocalTtsStandaloneProbeInstrumentedTest {
         const val DEFAULT_TEXT = "This is a standalone local TTS probe."
         const val DEFAULT_SPEED = 1.0f
         const val DEFAULT_TIMEOUT_MS = 120_000L
+    }
+
+    private fun resolveBundledModel(installer: BundledTtsModelInstaller, requestedModelId: String?): BundledTtsModel {
+        if (requestedModelId.isNullOrBlank()) {
+            return BundledTtsModels.DefaultEnglish
+        }
+        return installer.discoverBundledModels().firstOrNull { it.id.equals(requestedModelId, ignoreCase = true) }
+            ?: BundledTtsModels.findById(requestedModelId)
+            ?: error("Unknown bundled model id: $requestedModelId")
     }
 }
