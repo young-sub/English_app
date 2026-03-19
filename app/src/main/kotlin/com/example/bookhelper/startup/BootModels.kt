@@ -10,7 +10,7 @@ enum class BootStage(
     SYSTEM_TTS("시스템 TTS 준비 중", true),
     LOCAL_TTS_RUNTIME("로컬 TTS 구동 준비 중", true),
     PROVISIONING("기본 준비 상태 확인 중", true),
-    LOCAL_TTS_BENCHMARK("로컬 TTS 성능 측정 중", false),
+    LOCAL_TTS_BENCHMARK("온디바이스 음성 최종 확인 중", false),
     CAMERA_WARMUP("카메라 준비 상태 점검 중", false),
 }
 
