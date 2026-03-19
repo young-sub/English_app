@@ -6,6 +6,8 @@ data class BundledTtsModel(
     val shortLabel: String,
     val assetDirectory: String,
     val speakers: List<LocalSpeakerProfile>,
+    val modelKind: LocalTtsModelKind = LocalTtsModelKind.KOKORO,
+    val modelFormat: LocalTtsModelFormat = LocalTtsModelFormat.KOKORO_ONNX,
 )
 
 data class LocalSpeakerProfile(
@@ -33,6 +35,12 @@ fun BundledTtsModel.normalizeSpeakerId(candidate: Int?): Int {
     return if (speakers.any { it.id == resolved }) resolved else defaultSpeakerId
 }
 
+val BundledTtsModel.requiredInstallFiles: Set<String>
+    get() = when (modelKind) {
+        LocalTtsModelKind.KOKORO -> setOf("model.onnx", "voices.bin", "tokens.txt", "espeak-ng-data/")
+        LocalTtsModelKind.PIPER_DERIVED -> setOf("model.onnx", "tokens.txt", "espeak-ng-data/")
+    }
+
 object BundledTtsModels {
     const val AssetRoot = "tts-models"
 
@@ -54,6 +62,8 @@ object BundledTtsModels {
             LocalSpeakerProfile(9, "bm_george", "George", SpeakerGender.MALE, "UK"),
             LocalSpeakerProfile(10, "bm_lewis", "Lewis", SpeakerGender.MALE, "UK"),
         ),
+        modelKind = LocalTtsModelKind.KOKORO,
+        modelFormat = LocalTtsModelFormat.KOKORO_ONNX,
     )
 
     val All: List<BundledTtsModel> = listOf(KokoroEnV019)

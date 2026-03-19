@@ -90,7 +90,31 @@ class TtsCoreTest {
         assertEquals(1, BundledTtsModels.All.size)
         assertEquals(BundledTtsModels.KokoroEnV019.id, BundledTtsModels.All.first().id)
         assertEquals(BundledTtsModels.KokoroEnV019.id, BundledTtsModels.DefaultEnglish.id)
+        assertEquals(LocalTtsModelKind.KOKORO, BundledTtsModels.KokoroEnV019.modelKind)
+        assertEquals(LocalTtsModelFormat.KOKORO_ONNX, BundledTtsModels.KokoroEnV019.modelFormat)
+        assertEquals(
+            setOf("model.onnx", "voices.bin", "tokens.txt", "espeak-ng-data/"),
+            BundledTtsModels.KokoroEnV019.requiredInstallFiles,
+        )
         assertNull(BundledTtsModels.findById("unknown-model"))
+    }
+
+    @Test
+    fun piperDerivedModelsUsePiperFileRequirements() {
+        val model = BundledTtsModel(
+            id = "piper-test",
+            displayName = "Piper Test",
+            shortLabel = "Piper",
+            assetDirectory = "tts-models/piper-test",
+            speakers = listOf(LocalSpeakerProfile(0, "default", "Default", SpeakerGender.UNKNOWN, "General")),
+            modelKind = LocalTtsModelKind.PIPER_DERIVED,
+            modelFormat = LocalTtsModelFormat.PIPER_ONNX,
+        )
+
+        assertEquals(
+            setOf("model.onnx", "tokens.txt", "espeak-ng-data/"),
+            model.requiredInstallFiles,
+        )
     }
 
     @Test

@@ -24,7 +24,7 @@ class BundledTtsModelInstaller(context: Context) {
     fun ensureInstalled(model: BundledTtsModel): Result<String> {
         return runCatching {
             val installRoot = File(appContext.filesDir, "tts-models/${model.id}")
-            if (isModelReady(installRoot)) {
+            if (isModelReady(installRoot, model)) {
                 return@runCatching installRoot.absolutePath
             }
 
@@ -38,8 +38,10 @@ class BundledTtsModelInstaller(context: Context) {
             installRoot.mkdirs()
             copyAssetTree(model.assetDirectory, installRoot)
 
-            if (!isModelReady(installRoot)) {
-                error("Bundled Kokoro model is incomplete (required: model.onnx, voices.bin, tokens.txt, espeak-ng-data/)")
+            if (!isModelReady(installRoot, model)) {
+                error(
+                    "Bundled local model is incomplete (required: ${model.requiredInstallFiles.joinToString(", ")})",
+                )
             }
 
             installRoot.absolutePath
@@ -78,15 +80,18 @@ class BundledTtsModelInstaller(context: Context) {
         )
     }
 
-    private fun isModelReady(modelDir: File): Boolean {
+    private fun isModelReady(modelDir: File, model: BundledTtsModel): Boolean {
         if (!modelDir.exists() || !modelDir.isDirectory) {
             return false
         }
         val hasModel = File(modelDir, "model.onnx").exists()
-        val hasVoices = File(modelDir, "voices.bin").exists()
         val hasTokens = File(modelDir, "tokens.txt").exists()
         val hasEspeakData = File(modelDir, "espeak-ng-data").isDirectory
-        return hasModel && hasVoices && hasTokens && hasEspeakData
+        val hasVoices = File(modelDir, "voices.bin").exists()
+        return when (model.modelKind) {
+            LocalTtsModelKind.KOKORO -> hasModel && hasVoices && hasTokens && hasEspeakData
+            LocalTtsModelKind.PIPER_DERIVED -> hasModel && hasTokens && hasEspeakData
+        }
     }
 
     private fun copyAssetTree(assetPath: String, target: File) {
