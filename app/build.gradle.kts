@@ -1,5 +1,4 @@
 import org.gradle.api.GradleException
-import org.gradle.api.tasks.Sync
 import java.util.Properties
 
 plugins {
@@ -33,17 +32,44 @@ if (isReleaseTaskRequested && !hasReleaseKeystore) {
     )
 }
 
-val bundledTtsModelSourceDir = rootProject.file(
+fun resolveRepoRelativePath(relativePath: String) = run {
+    val direct = rootProject.file(relativePath)
+    if (direct.exists()) {
+        direct
+    } else {
+        val repoRootFallback = rootProject.projectDir.parentFile
+            ?.takeIf { it.name == ".worktrees" }
+            ?.parentFile
+            ?.resolve(relativePath)
+        repoRootFallback ?: direct
+    }
+}
+
+val bundledTtsModelSourceDir = resolveRepoRelativePath(
     repoLayoutProperties.getProperty("asset.tts.models", "modules/feature/tts/models"),
 )
 val bundledTtsAssetsRoot = layout.buildDirectory.dir("generated/tts-assets/main")
 
-val prepareBundledTtsModel by tasks.registering(Sync::class) {
-    from(bundledTtsModelSourceDir)
-    into(bundledTtsAssetsRoot.map { it.dir("tts-models") })
-    include("**/*")
-    exclude("**/*.bz2")
-    exclude("**/*.md")
+val prepareBundledTtsModel by tasks.registering {
+    val outputDir = bundledTtsAssetsRoot.map { it.dir("tts-models") }
+    inputs.dir(bundledTtsModelSourceDir)
+    inputs.file(rootProject.file("scripts/prepare_bundled_tts_assets.py"))
+    outputs.dir(outputDir)
+
+    doLast {
+        val destinationDir = outputDir.get().asFile
+        destinationDir.parentFile?.mkdirs()
+        exec {
+            commandLine(
+                "python",
+                rootProject.file("scripts/prepare_bundled_tts_assets.py").absolutePath,
+                "--source",
+                bundledTtsModelSourceDir.absolutePath,
+                "--dest",
+                destinationDir.absolutePath,
+            )
+        }
+    }
 }
 
 android {

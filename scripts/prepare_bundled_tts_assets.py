@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+from pathlib import Path
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", required=True)
+    parser.add_argument("--dest", required=True)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    source_root = Path(args.source)
+    dest_root = Path(args.dest)
+
+    if dest_root.exists():
+        shutil.rmtree(dest_root)
+    dest_root.mkdir(parents=True, exist_ok=True)
+
+    espeak_source = source_root / "kokoro-en-v0_19" / "espeak-ng-data"
+
+    for child in sorted(source_root.iterdir()):
+        if not child.is_dir():
+            continue
+        if child.name == "piper-en_US-libritts_r-medium":
+            prepare_piper_dir(child, dest_root / child.name, espeak_source)
+        else:
+            copy_tree_filtered(child, dest_root / child.name)
+
+
+def copy_tree_filtered(source: Path, dest: Path) -> None:
+    shutil.copytree(
+        source,
+        dest,
+        ignore=shutil.ignore_patterns("*.md", "*.bz2"),
+        dirs_exist_ok=True,
+    )
+
+
+def prepare_piper_dir(source: Path, dest: Path, espeak_source: Path) -> None:
+    try:
+        import onnx
+    except ImportError as exc:
+        raise SystemExit(
+            "Missing Python dependency 'onnx'. Install it locally with `python -m pip install --user onnx==1.17.0`."
+        ) from exc
+
+    raw_model = next(source.glob("*.onnx"), None)
+    raw_json = next(source.glob("*.onnx.json"), None)
+    if raw_model is None or raw_json is None:
+        raise SystemExit(f"Raw Piper model is incomplete in {source}")
+
+    config = json.loads(raw_json.read_text(encoding="utf-8"))
+    dest.mkdir(parents=True, exist_ok=True)
+
+    output_model = dest / "model.onnx"
+    shutil.copy2(raw_model, output_model)
+    patch_onnx_metadata(onnx, output_model, config)
+
+    write_tokens(dest / "tokens.txt", config)
+
+    espeak_dest = dest / "espeak-ng-data"
+    if espeak_dest.exists():
+        shutil.rmtree(espeak_dest)
+    shutil.copytree(espeak_source, espeak_dest)
+
+    write_speaker_manifest(dest / "speaker-manifest.tsv", config)
+
+
+def patch_onnx_metadata(onnx_module, model_path: Path, config: dict) -> None:
+    model = onnx_module.load(str(model_path))
+    existing = {entry.key: entry for entry in model.metadata_props}
+    metadata = {
+        "model_type": "vits",
+        "comment": "piper",
+        "language": config["language"]["name_english"],
+        "voice": config["espeak"]["voice"],
+        "has_espeak": "1",
+        "n_speakers": str(config["num_speakers"]),
+        "sample_rate": str(config["audio"]["sample_rate"]),
+    }
+    for key, value in metadata.items():
+        if key in existing:
+            existing[key].value = str(value)
+        else:
+            prop = model.metadata_props.add()
+            prop.key = key
+            prop.value = str(value)
+    onnx_module.save(model, str(model_path))
+
+
+def write_tokens(tokens_path: Path, config: dict) -> None:
+    with tokens_path.open("w", encoding="utf-8") as file:
+        for symbol, ids in config["phoneme_id_map"].items():
+            if symbol.strip() == "":
+                continue
+            file.write(f"{symbol} {ids[0]}\n")
+
+
+def write_speaker_manifest(manifest_path: Path, config: dict) -> None:
+    speaker_items = sorted((config.get("speaker_id_map") or {}).items(), key=lambda item: item[1])
+    preset_count = min(len(speaker_items), 48)
+    with manifest_path.open("w", encoding="utf-8") as file:
+        file.write("speaker_id\tcode\tdisplay_label\taccent_label\tgender\n")
+        for index, (code, speaker_id) in enumerate(speaker_items[:preset_count]):
+            batch = index // 6 + 1
+            file.write(f"{speaker_id}\t{code}\tSpeaker {speaker_id}\tPreset {batch}\tUNKNOWN\n")
+
+
+if __name__ == "__main__":
+    main()
