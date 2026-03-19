@@ -7,6 +7,8 @@ import json
 import shutil
 from pathlib import Path
 
+PIPER_BUNDLED_MODEL_DIRS = {"piper-en_US-libritts_r-medium"}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -29,19 +31,10 @@ def main() -> None:
     for child in sorted(source_root.iterdir()):
         if not child.is_dir():
             continue
+        if child.name not in PIPER_BUNDLED_MODEL_DIRS:
+            continue
         if child.name == "piper-en_US-libritts_r-medium":
             prepare_piper_dir(child, dest_root / child.name, espeak_source)
-        else:
-            copy_tree_filtered(child, dest_root / child.name)
-
-
-def copy_tree_filtered(source: Path, dest: Path) -> None:
-    shutil.copytree(
-        source,
-        dest,
-        ignore=shutil.ignore_patterns("*.md", "*.bz2"),
-        dirs_exist_ok=True,
-    )
 
 
 def prepare_piper_dir(source: Path, dest: Path, espeak_source: Path) -> None:

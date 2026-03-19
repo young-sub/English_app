@@ -96,11 +96,10 @@ object BundledTtsModels {
     )
 
     val All: List<BundledTtsModel> = listOf(
-        KokoroEnV019,
         PiperEnUsLibriTtsRMedium,
     )
 
-    val DefaultEnglish: BundledTtsModel = KokoroEnV019
+    val DefaultEnglish: BundledTtsModel = PiperEnUsLibriTtsRMedium
 
     fun findById(id: String?): BundledTtsModel? {
         if (id.isNullOrBlank()) {

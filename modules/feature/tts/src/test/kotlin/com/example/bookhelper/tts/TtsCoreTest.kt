@@ -86,16 +86,17 @@ class TtsCoreTest {
     }
 
     @Test
-    fun bundledModelsIncludeBundledKokoroAndPiper() {
-        assertEquals(2, BundledTtsModels.All.size)
-        assertEquals(BundledTtsModels.KokoroEnV019.id, BundledTtsModels.All.first().id)
-        assertEquals(BundledTtsModels.KokoroEnV019.id, BundledTtsModels.DefaultEnglish.id)
+    fun bundledModelsDefaultToBundledPiperOnly() {
+        assertEquals(1, BundledTtsModels.All.size)
+        assertEquals(BundledTtsModels.PiperEnUsLibriTtsRMedium.id, BundledTtsModels.All.first().id)
+        assertEquals(BundledTtsModels.PiperEnUsLibriTtsRMedium.id, BundledTtsModels.DefaultEnglish.id)
         assertEquals(LocalTtsModelKind.KOKORO, BundledTtsModels.KokoroEnV019.modelKind)
         assertEquals(LocalTtsModelFormat.KOKORO_ONNX, BundledTtsModels.KokoroEnV019.modelFormat)
         assertEquals(
             setOf("model.onnx", "voices.bin", "tokens.txt", "espeak-ng-data/"),
             BundledTtsModels.KokoroEnV019.requiredInstallFiles,
         )
+        assertTrue(BundledTtsModels.KokoroEnV019 !in BundledTtsModels.All)
         assertEquals(LocalTtsModelKind.PIPER_DERIVED, BundledTtsModels.PiperEnUsLibriTtsRMedium.modelKind)
         assertEquals(LocalTtsModelFormat.PIPER_ONNX, BundledTtsModels.PiperEnUsLibriTtsRMedium.modelFormat)
         assertEquals(
