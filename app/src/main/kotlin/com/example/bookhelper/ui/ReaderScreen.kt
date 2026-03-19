@@ -141,6 +141,8 @@ fun ReaderScreen(
     val dictionaryScroll = rememberScrollState()
     val savedWordsScroll = rememberScrollState()
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showAdvancedVoiceOptions by remember { mutableStateOf(false) }
+    var showInteractionOptions by remember { mutableStateOf(false) }
     var isSnapshotMode by remember { mutableStateOf(false) }
     var isSnapshotProcessing by remember { mutableStateOf(false) }
     var isGalleryPicking by remember { mutableStateOf(false) }
@@ -702,124 +704,150 @@ fun ReaderScreen(
                                 .padding(18.dp),
                             verticalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
+                            val usesOnDeviceVoice = uiState.ttsEnginePreference == TtsEnginePreference.ON_DEVICE
+                            val usesSystemVoice = !usesOnDeviceVoice
                             Text("음성 엔진", fontWeight = FontWeight.Bold)
-                            Text("시스템 음성과 온디바이스 음성 중 원하는 경로를 선택하세요.", color = Color(0xFF64748B))
+                            Text("자주 쓰는 선택지만 먼저 보여드릴게요.", color = Color(0xFF64748B))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                val current = uiState.ttsEnginePreference
                                 EngineOptionButton(
-                                    label = "Google",
-                                    selected = current == TtsEnginePreference.GOOGLE,
+                                    label = "시스템 음성",
+                                    selected = usesSystemVoice,
                                     onClick = { onSetTtsEnginePreference(TtsEnginePreference.GOOGLE) },
                                 )
                                 EngineOptionButton(
-                                    label = "Samsung",
-                                    selected = current == TtsEnginePreference.SAMSUNG,
-                                    onClick = { onSetTtsEnginePreference(TtsEnginePreference.SAMSUNG) },
-                                )
-                                EngineOptionButton(
                                     label = "온디바이스",
-                                    selected = current == TtsEnginePreference.ON_DEVICE,
+                                    selected = usesOnDeviceVoice,
                                     onClick = { onSetTtsEnginePreference(TtsEnginePreference.ON_DEVICE) },
                                 )
                             }
 
-                            HorizontalDivider(color = Color(0xFFE2E8F0))
-
-                            Text("온디바이스 모델", fontWeight = FontWeight.Bold)
-                            if (displayedModels.isEmpty()) {
-                                Text("사용 가능한 온디바이스 음성이 없습니다.", color = Color(0xFF64748B))
-                            } else {
-                                Row(
-                                    modifier = Modifier.horizontalScroll(modelPickerScroll),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                ) {
-                                    displayedModels.forEach { model ->
-                                        VoiceModelCard(
-                                            model = model,
-                                            selected = model.id == uiState.selectedLocalModelId,
-                                            onClick = { onSetLocalModel(model.id) },
+                            if (usesSystemVoice) {
+                                TextButton(onClick = { showAdvancedVoiceOptions = !showAdvancedVoiceOptions }) {
+                                    Text(if (showAdvancedVoiceOptions) "시스템 엔진 숨기기" else "시스템 엔진 세부 선택")
+                                }
+                                if (showAdvancedVoiceOptions) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        EngineOptionButton(
+                                            label = "Google",
+                                            selected = uiState.ttsEnginePreference == TtsEnginePreference.GOOGLE,
+                                            onClick = { onSetTtsEnginePreference(TtsEnginePreference.GOOGLE) },
+                                        )
+                                        EngineOptionButton(
+                                            label = "Samsung",
+                                            selected = uiState.ttsEnginePreference == TtsEnginePreference.SAMSUNG,
+                                            onClick = { onSetTtsEnginePreference(TtsEnginePreference.SAMSUNG) },
                                         )
                                     }
                                 }
                             }
 
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = Color(0xFFF8FAFC),
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(14.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    Text(
-                                        text = selectedModelSummary(uiState),
-                                        color = Color(0xFF0F172A),
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                    Text(
-                                        text = selectedSpeakerGuidance(selectedModel),
-                                        color = Color(0xFF64748B),
-                                    )
-                                    Text(
-                                        text = if (uiState.bundledModelReady) {
-                                            if (uiState.effectiveLocalModelEnabled) "현재 온디바이스 경로가 활성화되어 있어요."
-                                            else "모델은 준비되었지만 현재는 시스템 음성을 사용 중이에요."
-                                        } else {
-                                            "모델 파일이 아직 준비되지 않아 시스템 음성으로 동작해요."
-                                        },
-                                        color = if (uiState.bundledModelReady) DictionaryReadyColor else DictionaryMissingColor,
-                                    )
-                                    if (uiState.ttsEnginePreference == TtsEnginePreference.ON_DEVICE && uiState.localRuntimeChecking) {
-                                        Text("온디바이스 음성을 확인하는 중이에요. 잠시만 기다려주세요.", color = Color(0xFFB45309))
-                                    } else if (uiState.ttsEnginePreference == TtsEnginePreference.ON_DEVICE && !uiState.localRuntimeReady) {
-                                        Text("지금은 시스템 음성으로 이어집니다. 상세 오류는 아래 문구를 확인하세요.", color = DictionaryMissingColor)
-                                        uiState.localRuntimeLastError?.takeIf { it.isNotBlank() }?.let { failureReason ->
-                                            Text(failureReason, color = DictionaryMissingColor, fontStyle = FontStyle.Italic)
+                            if (usesOnDeviceVoice) {
+                                HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                                Text("온디바이스 모델", fontWeight = FontWeight.Bold)
+                                if (displayedModels.isEmpty()) {
+                                    Text("사용 가능한 온디바이스 음성이 없습니다.", color = Color(0xFF64748B))
+                                } else {
+                                    Row(
+                                        modifier = Modifier.horizontalScroll(modelPickerScroll),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    ) {
+                                        displayedModels.forEach { model ->
+                                            VoiceModelCard(
+                                                model = model,
+                                                selected = model.id == uiState.selectedLocalModelId,
+                                                onClick = { onSetLocalModel(model.id) },
+                                            )
                                         }
                                     }
                                 }
-                            }
 
-                            if (uiState.ttsEnginePreference == TtsEnginePreference.ON_DEVICE && uiState.availableSpeakers.isNotEmpty()) {
-                                HorizontalDivider(color = Color(0xFFE2E8F0))
-                                Text("화자 선택", fontWeight = FontWeight.Bold)
-                                Text(selectedSpeakerSectionDescription(selectedModel), color = Color(0xFF64748B))
-                                groupedSpeakers.forEach { (groupLabel, speakers) ->
-                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text(groupLabel, fontWeight = FontWeight.SemiBold, color = Color(0xFF0F172A))
-                                        Row(
-                                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        ) {
-                                            speakers.forEach { speaker ->
-                                                SpeakerChip(
-                                                    speaker = speaker,
-                                                    selected = speaker.id == uiState.selectedSpeakerId,
-                                                    onClick = { onSetLocalSpeaker(speaker.id) },
-                                                )
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = Color(0xFFF8FAFC),
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Text(
+                                            text = selectedModelSummary(uiState),
+                                            color = Color(0xFF0F172A),
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                        Text(
+                                            text = selectedSpeakerGuidance(selectedModel),
+                                            color = Color(0xFF64748B),
+                                        )
+                                        Text(
+                                            text = if (uiState.bundledModelReady) {
+                                                if (uiState.effectiveLocalModelEnabled) "현재 온디바이스 경로가 활성화되어 있어요."
+                                                else "모델은 준비되었지만 현재는 시스템 음성을 사용 중이에요."
+                                            } else {
+                                                "모델 파일이 아직 준비되지 않아 시스템 음성으로 동작해요."
+                                            },
+                                            color = if (uiState.bundledModelReady) DictionaryReadyColor else DictionaryMissingColor,
+                                        )
+                                        if (uiState.localRuntimeChecking) {
+                                            Text("온디바이스 음성을 확인하는 중이에요. 잠시만 기다려주세요.", color = Color(0xFFB45309))
+                                        } else if (!uiState.localRuntimeReady) {
+                                            Text("지금은 시스템 음성으로 이어집니다. 상세 오류는 아래 문구를 확인하세요.", color = DictionaryMissingColor)
+                                            uiState.localRuntimeLastError?.takeIf { it.isNotBlank() }?.let { failureReason ->
+                                                Text(failureReason, color = DictionaryMissingColor, fontStyle = FontStyle.Italic)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (uiState.availableSpeakers.isNotEmpty()) {
+                                    HorizontalDivider(color = Color(0xFFE2E8F0))
+                                    Text("화자 선택", fontWeight = FontWeight.Bold)
+                                    Text(selectedSpeakerSectionDescription(selectedModel), color = Color(0xFF64748B))
+                                    groupedSpeakers.forEach { (groupLabel, speakers) ->
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Text(groupLabel, fontWeight = FontWeight.SemiBold, color = Color(0xFF0F172A))
+                                            Row(
+                                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            ) {
+                                                speakers.forEach { speaker ->
+                                                    SpeakerChip(
+                                                        speaker = speaker,
+                                                        selected = speaker.id == uiState.selectedSpeakerId,
+                                                        onClick = { onSetLocalSpeaker(speaker.id) },
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
+
+                            HorizontalDivider(color = Color(0xFFE2E8F0))
+                            TextButton(onClick = { showInteractionOptions = !showInteractionOptions }) {
+                                Text(if (showInteractionOptions) "고급 설정 숨기기" else "고급 설정")
+                            }
+                            if (showInteractionOptions) {
+                                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Text("2단어 탭 간격: ${uiState.tapSelectionWindowMs}ms")
+                                    Slider(
+                                        value = uiState.tapSelectionWindowMs.toFloat(),
+                                        onValueChange = { onSetTapSelectionWindowMs(it.toLong()) },
+                                        valueRange = 300f..3000f,
+                                    )
+
+                                    Text("드래그 최소 거리: ${uiState.dragSelectionMinDistancePx.toInt()}px")
+                                    Slider(
+                                        value = uiState.dragSelectionMinDistancePx,
+                                        onValueChange = onSetDragSelectionMinDistancePx,
+                                        valueRange = 4f..200f,
+                                    )
+                                }
+                            }
                         }
                     }
-
-                    Text("2단어 탭 간격: ${uiState.tapSelectionWindowMs}ms")
-                    Slider(
-                        value = uiState.tapSelectionWindowMs.toFloat(),
-                        onValueChange = { onSetTapSelectionWindowMs(it.toLong()) },
-                        valueRange = 300f..3000f,
-                    )
-
-                    Text("드래그 최소 거리: ${uiState.dragSelectionMinDistancePx.toInt()}px")
-                    Slider(
-                        value = uiState.dragSelectionMinDistancePx,
-                        onValueChange = onSetDragSelectionMinDistancePx,
-                        valueRange = 4f..200f,
-                    )
                 }
             },
             confirmButton = {
