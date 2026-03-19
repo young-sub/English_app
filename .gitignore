@@ -1,4 +1,5 @@
 .tooling/
+.worktrees/
 .gradle/
 build/
 **/build/
@@ -16,3 +17,7 @@ app/src/main/assets/dictionary_seed.json
 app/src/main/assets/databases/dictionary.db
 tools/dictionary_etl/cache/
 tools/dictionary_etl/raw/
+
+# Local model evaluation artifacts
+*.zip
+*.part
