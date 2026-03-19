@@ -83,6 +83,7 @@ class LocalModelTtsEngine {
 
         val normalizedSpeed = speed.coerceIn(MIN_LOCAL_SPEED, MAX_LOCAL_SPEED)
         val speakerId = configuredSpeakerId
+        val segments = synthesisSegments(normalizedText)
         lastFailureReasonRef.set(null)
         val utteranceId = utteranceIdRef.incrementAndGet()
         stop()
@@ -106,22 +107,13 @@ class LocalModelTtsEngine {
 
                         val tts = offlineTts ?: error("Offline TTS is not initialized")
                         val descriptor = loadedModelDescriptor ?: error("Local model descriptor is not initialized")
-                        val generateStartNs = System.nanoTime()
-                        generateAudio(
+                        generateSegmentedAudio(
                             tts = tts,
                             descriptor = descriptor,
-                            text = normalizedText,
+                            segments = segments,
                             speakerId = speakerId,
                             speed = normalizedSpeed,
-                        ).also { generated ->
-                            val generateMs = nanosToMillis(System.nanoTime() - generateStartNs)
-                            updatePlaybackTelemetry(
-                                generationMs = generateMs,
-                                generatedSampleCount = generated.samples.size,
-                                generatedSampleRate = generated.sampleRate,
-                                generatedPcmNonEmpty = generated.samples.isNotEmpty() && generated.sampleRate > 0,
-                            )
-                        }
+                        )
                     }
                     enqueuePlayback(
                         utteranceId = utteranceId,
@@ -180,15 +172,16 @@ class LocalModelTtsEngine {
                         ensureLoaded(modelPath)
                         val tts = offlineTts ?: error("Offline TTS is not initialized")
                         val descriptor = loadedModelDescriptor ?: error("Local model descriptor is not initialized")
-                        val startNs = System.nanoTime()
-                        val audio = generateAudio(
+                        val segments = synthesisSegments(text)
+                        val segmented = benchmarkSegmentedAudio(
                             tts = tts,
                             descriptor = descriptor,
-                            text = text,
+                            segments = segments,
                             speakerId = configuredSpeakerId,
                             speed = speed.coerceIn(MIN_LOCAL_SPEED, MAX_LOCAL_SPEED),
                         )
-                        val generationMs = (System.nanoTime() - startNs) / 1_000_000.0
+                        val audio = segmented.audio
+                        val generationMs = segmented.totalGenerationMs
                         val extracted = extractAudioSamples(audio)
                         val durationMs = if (extracted.sampleRate > 0) {
                             extracted.samples.size * 1000.0 / extracted.sampleRate
@@ -198,10 +191,12 @@ class LocalModelTtsEngine {
                         val rtf = if (durationMs > 0.0) generationMs / durationMs else Double.POSITIVE_INFINITY
                         LocalTtsBenchmarkMetrics(
                             generationMillis = generationMs,
+                            firstChunkGenerationMillis = segmented.firstChunkGenerationMs,
                             audioDurationMillis = durationMs,
                             realTimeFactor = rtf,
                             sampleRate = extracted.sampleRate,
                             sampleCount = extracted.samples.size,
+                            segmentCount = segments.size,
                         )
                     }
                 },
@@ -365,6 +360,96 @@ class LocalModelTtsEngine {
             maxNumSentences = configuredMaxNumSentences ?: 1,
             silenceScale = 0.2f,
         )
+    }
+
+    private fun generateSegmentedAudio(
+        tts: OfflineTts,
+        descriptor: LocalModelDescriptor,
+        segments: List<String>,
+        speakerId: Int,
+        speed: Float,
+    ): com.k2fsa.sherpa.onnx.GeneratedAudio {
+        val generated = mutableListOf<com.k2fsa.sherpa.onnx.GeneratedAudio>()
+        var totalGenerationMs = 0.0
+        var firstChunkGenerationMs = 0.0
+        segments.forEachIndexed { index, segment ->
+            val generateStartNs = System.nanoTime()
+            val audio = generateAudio(
+                tts = tts,
+                descriptor = descriptor,
+                text = segment,
+                speakerId = speakerId,
+                speed = speed,
+            )
+            val generationMs = nanosToMillis(System.nanoTime() - generateStartNs)
+            totalGenerationMs += generationMs
+            if (index == 0) {
+                firstChunkGenerationMs = generationMs
+            }
+            generated += audio
+        }
+
+        val merged = mergeGeneratedAudio(generated)
+        updatePlaybackTelemetry(
+            generationMs = totalGenerationMs,
+            firstChunkGenerationMs = firstChunkGenerationMs,
+            segmentCount = segments.size,
+            generatedSampleCount = merged.samples.size,
+            generatedSampleRate = merged.sampleRate,
+            generatedPcmNonEmpty = merged.samples.isNotEmpty() && merged.sampleRate > 0,
+        )
+        return merged
+    }
+
+    private fun benchmarkSegmentedAudio(
+        tts: OfflineTts,
+        descriptor: LocalModelDescriptor,
+        segments: List<String>,
+        speakerId: Int,
+        speed: Float,
+    ): SegmentedAudioResult {
+        val generated = mutableListOf<com.k2fsa.sherpa.onnx.GeneratedAudio>()
+        var totalGenerationMs = 0.0
+        var firstChunkGenerationMs = 0.0
+        segments.forEachIndexed { index, segment ->
+            val startNs = System.nanoTime()
+            val audio = generateAudio(
+                tts = tts,
+                descriptor = descriptor,
+                text = segment,
+                speakerId = speakerId,
+                speed = speed,
+            )
+            val generationMs = nanosToMillis(System.nanoTime() - startNs)
+            totalGenerationMs += generationMs
+            if (index == 0) {
+                firstChunkGenerationMs = generationMs
+            }
+            generated += audio
+        }
+        return SegmentedAudioResult(
+            audio = mergeGeneratedAudio(generated),
+            firstChunkGenerationMs = firstChunkGenerationMs,
+            totalGenerationMs = totalGenerationMs,
+        )
+    }
+
+    private fun mergeGeneratedAudio(
+        generated: List<com.k2fsa.sherpa.onnx.GeneratedAudio>,
+    ): com.k2fsa.sherpa.onnx.GeneratedAudio {
+        if (generated.size == 1) {
+            return generated.single()
+        }
+        val sampleRate = generated.firstOrNull()?.sampleRate ?: 0
+        require(generated.all { it.sampleRate == sampleRate }) { "Generated segments use different sample rates" }
+        val totalSamples = generated.sumOf { it.samples.size }
+        val merged = FloatArray(totalSamples)
+        var offset = 0
+        generated.forEach { audio ->
+            audio.samples.copyInto(merged, destinationOffset = offset)
+            offset += audio.samples.size
+        }
+        return com.k2fsa.sherpa.onnx.GeneratedAudio(merged, sampleRate)
     }
 
     private fun generateAudio(
@@ -873,6 +958,8 @@ class LocalModelTtsEngine {
         maxPlaybackHeadFrames: Int? = null,
         ensureLoadedMs: Double? = null,
         generationMs: Double? = null,
+        firstChunkGenerationMs: Double? = null,
+        segmentCount: Int? = null,
         generatedSampleCount: Int? = null,
         generatedSampleRate: Int? = null,
         generatedPcmNonEmpty: Boolean? = null,
@@ -893,6 +980,8 @@ class LocalModelTtsEngine {
                 },
                 ensureLoadedMs = ensureLoadedMs ?: current.ensureLoadedMs,
                 generationMs = generationMs ?: current.generationMs,
+                firstChunkGenerationMs = firstChunkGenerationMs ?: current.firstChunkGenerationMs,
+                segmentCount = segmentCount ?: current.segmentCount,
                 generatedSampleCount = generatedSampleCount ?: current.generatedSampleCount,
                 generatedSampleRate = generatedSampleRate ?: current.generatedSampleRate,
                 generatedPcmNonEmpty = generatedPcmNonEmpty ?: current.generatedPcmNonEmpty,
@@ -921,7 +1010,7 @@ class LocalModelTtsEngine {
         val telemetry = playbackTelemetryRef.get()
         Log.i(
             TAG,
-            "LOCAL_TTS_TELEMETRY queueWaitMs=${telemetry.queueWaitMs} ensureLoadedMs=${telemetry.ensureLoadedMs} generationMs=${telemetry.generationMs} generatedPcmNonEmpty=${telemetry.generatedPcmNonEmpty} generatedSampleCount=${telemetry.generatedSampleCount} generatedSampleRate=${telemetry.generatedSampleRate} audioTrackMode=${telemetry.audioTrackMode} audioTrackInitialized=${telemetry.audioTrackInitialized} audioTrackCreateMs=${telemetry.audioTrackCreateMs} audioWriteMs=${telemetry.audioWriteMs} audioWriteFrames=${telemetry.audioWriteFrames} audioWriteSucceeded=${telemetry.audioWriteSucceeded} maxPlaybackHeadFrames=${telemetry.maxPlaybackHeadFrames} completed=${telemetry.completed} timedOut=${telemetry.timedOut} timeoutCause=${telemetry.timeoutCause} failureReason=${telemetry.failureReason}",
+            "LOCAL_TTS_TELEMETRY queueWaitMs=${telemetry.queueWaitMs} ensureLoadedMs=${telemetry.ensureLoadedMs} generationMs=${telemetry.generationMs} firstChunkGenerationMs=${telemetry.firstChunkGenerationMs} segmentCount=${telemetry.segmentCount} generatedPcmNonEmpty=${telemetry.generatedPcmNonEmpty} generatedSampleCount=${telemetry.generatedSampleCount} generatedSampleRate=${telemetry.generatedSampleRate} audioTrackMode=${telemetry.audioTrackMode} audioTrackInitialized=${telemetry.audioTrackInitialized} audioTrackCreateMs=${telemetry.audioTrackCreateMs} audioWriteMs=${telemetry.audioWriteMs} audioWriteFrames=${telemetry.audioWriteFrames} audioWriteSucceeded=${telemetry.audioWriteSucceeded} maxPlaybackHeadFrames=${telemetry.maxPlaybackHeadFrames} completed=${telemetry.completed} timedOut=${telemetry.timedOut} timeoutCause=${telemetry.timeoutCause} failureReason=${telemetry.failureReason}",
         )
     }
 
@@ -939,10 +1028,12 @@ class LocalModelTtsEngine {
 
 data class LocalTtsBenchmarkMetrics(
     val generationMillis: Double,
+    val firstChunkGenerationMillis: Double,
     val audioDurationMillis: Double,
     val realTimeFactor: Double,
     val sampleRate: Int,
     val sampleCount: Int,
+    val segmentCount: Int,
 )
 
 private data class ExtractedAudio(
@@ -957,6 +1048,8 @@ internal data class LocalPlaybackTelemetry(
     val startedAtElapsedMs: Long = 0L,
     val ensureLoadedMs: Double = 0.0,
     val generationMs: Double = 0.0,
+    val firstChunkGenerationMs: Double = 0.0,
+    val segmentCount: Int = 1,
     val generatedSampleCount: Int = 0,
     val generatedSampleRate: Int = 0,
     val generatedPcmNonEmpty: Boolean = false,
@@ -974,6 +1067,20 @@ internal data class LocalPlaybackTelemetry(
     val timeoutCause: String? = null,
     val failureReason: String? = null,
 )
+
+private data class SegmentedAudioResult(
+    val audio: com.k2fsa.sherpa.onnx.GeneratedAudio,
+    val firstChunkGenerationMs: Double,
+    val totalGenerationMs: Double,
+)
+
+internal fun synthesisSegments(text: String): List<String> {
+    val normalized = text.trim()
+    if (normalized.isEmpty()) {
+        return emptyList()
+    }
+    return DeterministicTextChunker.chunk(normalized).ifEmpty { listOf(normalized) }
+}
 
 internal fun playbackTimeoutMillis(sampleCount: Int, sampleRate: Int): Long {
     if (sampleCount <= 0 || sampleRate <= 0) {
