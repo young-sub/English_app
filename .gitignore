@@ -1,0 +1,18 @@
+.tooling/
+.gradle/
+build/
+**/build/
+.idea/
+local.properties
+keystore.properties
+*.jks
+*.keystore
+build.txt
+models/
+__pycache__/
+
+# Generated dictionary artifacts and ETL caches
+app/src/main/assets/dictionary_seed.json
+app/src/main/assets/databases/dictionary.db
+tools/dictionary_etl/cache/
+tools/dictionary_etl/raw/

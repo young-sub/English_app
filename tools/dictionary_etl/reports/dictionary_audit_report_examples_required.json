@@ -1,0 +1,103 @@
+{
+  "dbSeparation": {
+    "dictionaryDbName": "dictionary.db",
+    "userDbName": "book_helper_user.db",
+    "isSeparated": true
+  },
+  "performance": {
+    "dbExists": true,
+    "entryCount": 226508,
+    "senseCount": 350256,
+    "ftsRowCount": 350256,
+    "queryPlans": {
+      "exactHeadword": [
+        "SEARCH dictionary_entries USING INDEX index_dictionary_entries_headword (headword=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "lemmaIn": [
+        "SEARCH dictionary_entries USING INDEX index_dictionary_entries_lemma (lemma=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "prefixLike": [
+        "SCAN dictionary_entries",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "prefixRange": [
+        "SEARCH dictionary_entries USING INDEX index_dictionary_entries_headword (headword>? AND headword<?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "ftsSearch": [
+        "SCAN dictionary_senses_fts VIRTUAL TABLE INDEX 8:",
+        "USE TEMP B-TREE FOR DISTINCT"
+      ]
+    },
+    "flags": [
+      "prefix LIKE query causes full scan"
+    ]
+  },
+  "quality": {
+    "csvFiles": [
+      "tools\\dictionary_etl\\raw\\core_dictionary.csv",
+      "tools\\dictionary_etl\\raw\\open_web_dictionary.csv",
+      "tools\\dictionary_etl\\raw\\sample_dictionary.csv",
+      "tools\\dictionary_etl\\raw\\top_coverage_supplement.csv"
+    ],
+    "rowCount": 350305,
+    "english": {
+      "uniqueHeadwords": 199985,
+      "uniqueLemmas": 160930,
+      "missingDefinitionEnRows": 0,
+      "definitionEnCompletenessRate": 100.0,
+      "topWordCoverage": {
+        "topN": 5000,
+        "wordfreqAvailable": true,
+        "covered": 4997,
+        "missing": 0,
+        "missingSamples": []
+      }
+    },
+    "englishKorean": {
+      "koExamplePolicy": "required",
+      "missingDefinitionKoRows": 285869,
+      "definitionKoCompletenessRate": 18.39,
+      "missingExampleKoRows": 332795,
+      "exampleKoCompletenessRate": 5.0,
+      "headwordKoCoverageRate": 11.11,
+      "suspiciousKoAsciiOnlyRows": 16,
+      "suspiciousEnHasHangulRows": 0,
+      "conflictingTranslationKeys": 10
+    },
+    "flags": [
+      "korean definition completeness under 90%",
+      "korean example completeness under 70% (required policy)",
+      "some korean definitions look untranslated (ASCII-only)",
+      "some identical english senses map to many different korean definitions"
+    ]
+  },
+  "seedMeta": {
+    "seedVersion": "a539654b2a2f8cc3",
+    "entryCount": 226508,
+    "senseCount": 350256,
+    "sourceCounts": {
+      "princeton-wordnet": 151097,
+      "princeton-wordnet+top-derived": 30,
+      "princeton-wordnet+tatoeba-eng-kor": 3035,
+      "princeton-wordnet+tatoeba-eng-kor+top-derived": 43,
+      "open-core-curated": 95,
+      "kaikki-top-coverage": 886,
+      "kaikki-top-coverage+top-derived": 1,
+      "kaikki-wiktionary-en": 67136,
+      "kaikki-wiktionary-en+tatoeba-eng-kor": 4173,
+      "kaikki-wiktionary-en+top-derived": 6,
+      "kaikki-wiktionary-en+tatoeba-eng-kor+top-derived": 2,
+      "tatoeba-lexicon-ko+tatoeba-eng-kor": 4
+    }
+  },
+  "recommendations": [
+    "Use index-friendly prefix range query instead of LIKE prefix for large dictionary tables.",
+    "Increase Korean definition augmentation coverage (Kaikki translations + Tatoeba lexical backfill).",
+    "Increase Korean example augmentation only if your product policy requires examples.",
+    "Filter or reprocess rows where definitionKo is ASCII-only to reduce untranslated Korean entries.",
+    "Add translation-consistency normalization for duplicated EN senses with divergent KO labels."
+  ]
+}
