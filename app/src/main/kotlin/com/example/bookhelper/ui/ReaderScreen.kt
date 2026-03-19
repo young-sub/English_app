@@ -667,11 +667,11 @@ fun ReaderScreen(
 
                         if (current == TtsEnginePreference.ON_DEVICE) {
                             Button(onClick = { onSetTtsEnginePreference(TtsEnginePreference.ON_DEVICE) }) {
-                                Text("Kokoro")
+                                Text("온디바이스")
                             }
                         } else {
                             OutlinedButton(onClick = { onSetTtsEnginePreference(TtsEnginePreference.ON_DEVICE) }) {
-                                Text("Kokoro")
+                                Text("온디바이스")
                             }
                         }
 

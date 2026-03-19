@@ -49,6 +49,7 @@ val BundledTtsModel.isDownloadedModel: Boolean
 
 object BundledTtsModels {
     const val AssetRoot = "tts-models"
+    private const val PIPER_PRESET_COUNT = 48
 
     val KokoroEnV019 = BundledTtsModel(
         id = "kokoro-en-v0_19",
@@ -77,9 +78,19 @@ object BundledTtsModels {
         displayName = "Piper EN LibriTTS-R Medium",
         shortLabel = "Piper LibriTTS-R",
         assetDirectory = "$AssetRoot/piper-en_US-libritts_r-medium",
-        speakers = listOf(
-            LocalSpeakerProfile(0, "speaker_0", "Speaker 0", SpeakerGender.UNKNOWN, "US"),
-        ),
+        speakers = buildList {
+            repeat(PIPER_PRESET_COUNT) { index ->
+                add(
+                    LocalSpeakerProfile(
+                        id = index,
+                        code = "speaker_$index",
+                        displayLabel = "Speaker $index",
+                        gender = SpeakerGender.UNKNOWN,
+                        accentLabel = "Preset ${index / 6 + 1}",
+                    ),
+                )
+            }
+        },
         modelKind = LocalTtsModelKind.PIPER_DERIVED,
         modelFormat = LocalTtsModelFormat.PIPER_ONNX,
     )
