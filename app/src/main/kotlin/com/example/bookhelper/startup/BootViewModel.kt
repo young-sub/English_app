@@ -81,6 +81,9 @@ class BootViewModel(
                             )
                             .distinctBy { it.id }
                         selectedModel = resolveLocalModel(localModels, settings.localModelId)
+                        if (!selectedModel.id.equals(settings.localModelId, ignoreCase = true)) {
+                            settingsStore.saveLocalModelId(selectedModel.id)
+                        }
                         BootStepResult("번들 모델 ${localModels.size}개 확인")
                     },
                     BootStep(BootStage.SYSTEM_TTS) {
@@ -94,14 +97,23 @@ class BootViewModel(
                     },
                     BootStep(BootStage.LOCAL_TTS_RUNTIME) {
                         val manager = requireNotNull(ttsHolder.manager)
-                        localActivation = activateLocalModel(
-                            manager = manager,
-                            installer = bundledModelInstaller,
-                            model = selectedModel,
-                            requestedSpeakerId = settings.localSpeakerId,
-                            preference = settings.ttsEnginePreference,
-                        )
-                        if (settings.ttsEnginePreference.requestsOnDeviceTts() && !localActivation.effectiveLocalModelEnabled) {
+                        val shouldPrepareLocalRuntime = settings.ttsEnginePreference.requestsOnDeviceTts()
+                        localActivation = if (shouldPrepareLocalRuntime) {
+                            activateLocalModel(
+                                manager = manager,
+                                installer = bundledModelInstaller,
+                                model = selectedModel,
+                                requestedSpeakerId = settings.localSpeakerId,
+                                preference = settings.ttsEnginePreference,
+                            )
+                        } else {
+                            skipLocalModelActivation(
+                                manager = manager,
+                                model = selectedModel,
+                                requestedSpeakerId = settings.localSpeakerId,
+                            )
+                        }
+                        if (shouldPrepareLocalRuntime && !localActivation.effectiveLocalModelEnabled) {
                             error(localActivation.lastFailureReason ?: "local TTS runtime is not ready")
                         }
                         BootStepResult("로컬 TTS 구동 준비 완료")
@@ -135,9 +147,13 @@ class BootViewModel(
                         BootStepResult(provisioningSummary)
                     },
                     BootStep(BootStage.LOCAL_TTS_BENCHMARK) {
-                        val manager = requireNotNull(ttsHolder.manager)
-                        manager.refreshLocalRuntime()
-                        BootStepResult("로컬 TTS 벤치마크/재확인 완료")
+                        if (settings.ttsEnginePreference.requestsOnDeviceTts()) {
+                            val manager = requireNotNull(ttsHolder.manager)
+                            manager.refreshLocalRuntime()
+                            BootStepResult("로컬 TTS 벤치마크/재확인 완료")
+                        } else {
+                            BootStepResult("시스템 음성 사용 중")
+                        }
                     },
                 ),
                 recorder = object : BootDiagnosticsRecorder {
@@ -263,6 +279,28 @@ class BootViewModel(
             runtimeChecking = runtimeStatus.runtimeChecking,
             lastFailureReason = runtimeStatus.lastFailureReason,
             effectiveLocalModelEnabled = runtimeStatus.effectiveRoute == TtsRoute.LOCAL_KOKORO,
+            effectiveRoute = runtimeStatus.effectiveRoute,
+        )
+    }
+
+    private fun skipLocalModelActivation(
+        manager: AndroidTtsManager,
+        model: BundledTtsModel,
+        requestedSpeakerId: Int,
+    ): BootLocalModelActivation {
+        val normalizedSpeakerId = model.normalizeSpeakerId(requestedSpeakerId)
+        manager.setLocalSpeakerId(normalizedSpeakerId)
+        manager.setLocalModelPath(null)
+        manager.setLocalModelEnabled(false)
+        val runtimeStatus = manager.currentRuntimeStatus()
+        return BootLocalModelActivation(
+            speakerId = normalizedSpeakerId,
+            modelPath = null,
+            modelReady = false,
+            runtimeReady = runtimeStatus.runtimeReady,
+            runtimeChecking = runtimeStatus.runtimeChecking,
+            lastFailureReason = runtimeStatus.lastFailureReason,
+            effectiveLocalModelEnabled = false,
             effectiveRoute = runtimeStatus.effectiveRoute,
         )
     }
