@@ -49,7 +49,7 @@ class LocalTtsStandaloneProbeInstrumentedTest {
             val warmup = engine.benchmarkSynthesis(text = "Ready.", speed = speed).getOrThrow()
             Log.i(
                 TAG,
-                "LOCAL_TTS_PROBE_WARMUP generationMs=${warmup.generationMillis} durationMs=${warmup.audioDurationMillis} rtf=${warmup.realTimeFactor}",
+                "LOCAL_TTS_PROBE_WARMUP generationMs=${warmup.generationMillis} firstChunkGenerationMs=${warmup.firstChunkGenerationMillis} segmentCount=${warmup.segmentCount} durationMs=${warmup.audioDurationMillis} rtf=${warmup.realTimeFactor}",
             )
 
             val accepted = engine.speakAsync(
@@ -72,7 +72,7 @@ class LocalTtsStandaloneProbeInstrumentedTest {
             val failureReason = engine.latestFailureReason()
             Log.i(
                 TAG,
-                "LOCAL_TTS_PROBE_RESULT success=${outcome.success} timedOut=${outcome.timedOut} failureCalled=${failureCalled.get()} failureReason=$failureReason textLength=${text.length} speed=$speed speakerId=$speakerId telemetryStartedAt=${telemetry.startedAtElapsedMs} telemetryMaxFrames=${telemetry.maxPlaybackHeadFrames} telemetryTotalFrames=${telemetry.totalFrames} telemetrySampleRate=${telemetry.sampleRate} telemetryCompleted=${telemetry.completed} telemetryTimedOut=${telemetry.timedOut}",
+                "LOCAL_TTS_PROBE_RESULT success=${outcome.success} timedOut=${outcome.timedOut} failureCalled=${failureCalled.get()} failureReason=$failureReason textLength=${text.length} speed=$speed speakerId=$speakerId telemetryStartedAt=${telemetry.startedAtElapsedMs} telemetryFirstChunkGenerationMs=${telemetry.firstChunkGenerationMs} telemetrySegmentCount=${telemetry.segmentCount} telemetryMaxFrames=${telemetry.maxPlaybackHeadFrames} telemetryTotalFrames=${telemetry.totalFrames} telemetrySampleRate=${telemetry.sampleRate} telemetryCompleted=${telemetry.completed} telemetryTimedOut=${telemetry.timedOut}",
             )
 
             assertTrue(

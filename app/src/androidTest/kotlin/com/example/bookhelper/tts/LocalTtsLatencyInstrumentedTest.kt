@@ -38,7 +38,7 @@ class LocalTtsLatencyInstrumentedTest {
 
             Log.i(
                 TAG,
-                "TTS_LATENCY modelPath=$modelPath modelId=${modelId ?: "default"} textLength=${text.length} repeatCount=$repeatCount speed=$speed numThreads=${numThreads ?: -1} maxNumSentences=${maxNumSentences ?: -1} first_gen_ms=${first.generationMillis} first_rtf=${first.realTimeFactor} warm_gen_ms=${warm.generationMillis} warm_rtf=${warm.realTimeFactor}",
+                "TTS_LATENCY modelPath=$modelPath modelId=${modelId ?: "default"} textLength=${text.length} repeatCount=$repeatCount speed=$speed numThreads=${numThreads ?: -1} maxNumSentences=${maxNumSentences ?: -1} first_gen_ms=${first.generationMillis} first_chunk_gen_ms=${first.firstChunkGenerationMillis} first_segments=${first.segmentCount} first_rtf=${first.realTimeFactor} warm_gen_ms=${warm.generationMillis} warm_chunk_gen_ms=${warm.firstChunkGenerationMillis} warm_segments=${warm.segmentCount} warm_rtf=${warm.realTimeFactor}",
             )
 
             assertTrue("First synthesis should generate audio", first.sampleCount > 0)
