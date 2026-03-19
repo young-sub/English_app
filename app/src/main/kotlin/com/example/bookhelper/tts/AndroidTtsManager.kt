@@ -192,11 +192,16 @@ class AndroidTtsManager(context: Context) : TextToSpeech.OnInitListener {
             return result
         }
 
-        val runtimeStatus = if (localModelRequested && localModelConfigured && (localRuntimeDirty || !localRuntimeReady)) {
-            refreshLocalRuntime()
-        } else {
-            currentRuntimeStatus()
+        val runtimePolicy = resolveSpeakHotPathRuntimePolicy(
+            localRequested = localModelRequested,
+            modelConfigured = localModelConfigured,
+            runtimeDirty = localRuntimeDirty,
+        )
+        if (runtimePolicy.scheduleAsyncVerification) {
+            scheduleLocalRuntimeVerificationIfNeeded()
         }
+
+        val runtimeStatus = currentRuntimeStatus()
         if (canAttemptLocalSpeak(runtimeStatus)) {
             val localAccepted = localModelTtsEngine.speakAsync(
                 text = normalizedText,
@@ -388,6 +393,23 @@ class AndroidTtsManager(context: Context) : TextToSpeech.OnInitListener {
         const val DEFAULT_SPEECH_RATE = 1.0f
         const val SYSTEM_TTS_READY_WAIT_MS = 1_500L
     }
+}
+
+internal data class SpeakHotPathRuntimePolicy(
+    val scheduleAsyncVerification: Boolean,
+    val requiresBlockingRefresh: Boolean,
+)
+
+internal fun resolveSpeakHotPathRuntimePolicy(
+    localRequested: Boolean,
+    modelConfigured: Boolean,
+    runtimeDirty: Boolean,
+): SpeakHotPathRuntimePolicy {
+    val scheduleAsyncVerification = localRequested && modelConfigured && runtimeDirty
+    return SpeakHotPathRuntimePolicy(
+        scheduleAsyncVerification = scheduleAsyncVerification,
+        requiresBlockingRefresh = false,
+    )
 }
 
 data class TtsSpeakResult(
