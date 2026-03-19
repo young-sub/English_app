@@ -115,6 +115,7 @@ class TtsCoreTest {
             setOf("model.onnx", "tokens.txt", "espeak-ng-data/"),
             model.requiredInstallFiles,
         )
+        assertTrue(model.isDownloadedModel)
     }
 
     @Test

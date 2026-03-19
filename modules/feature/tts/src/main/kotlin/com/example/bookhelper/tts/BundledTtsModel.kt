@@ -41,6 +41,9 @@ val BundledTtsModel.requiredInstallFiles: Set<String>
         LocalTtsModelKind.PIPER_DERIVED -> setOf("model.onnx", "tokens.txt", "espeak-ng-data/")
     }
 
+val BundledTtsModel.isDownloadedModel: Boolean
+    get() = assetDirectory.isBlank()
+
 object BundledTtsModels {
     const val AssetRoot = "tts-models"
 
