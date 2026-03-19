@@ -125,6 +125,23 @@ class TtsCoreTest {
     }
 
     @Test
+    fun piperDerivedModelsAllowDynamicSpeakerIds() {
+        val model = BundledTtsModel(
+            id = "piper-test",
+            displayName = "Piper Test",
+            shortLabel = "Piper",
+            assetDirectory = "tts-models/piper-test",
+            speakers = listOf(LocalSpeakerProfile(0, "default", "Default", SpeakerGender.UNKNOWN, "General")),
+            modelKind = LocalTtsModelKind.PIPER_DERIVED,
+            modelFormat = LocalTtsModelFormat.PIPER_ONNX,
+        )
+
+        assertTrue(model.supportsSpeakerSelection)
+        assertEquals(12, model.normalizeSpeakerId(12))
+        assertEquals(0, model.normalizeSpeakerId(-7))
+    }
+
+    @Test
     fun localRuntimeStatusMarksCheckingBeforeVerificationCompletes() {
         val status = resolveLocalTtsRuntimeStatus(
             localRequested = true,

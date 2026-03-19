@@ -28,9 +28,12 @@ val BundledTtsModel.defaultSpeakerId: Int
     get() = speakers.firstOrNull()?.id ?: 0
 
 val BundledTtsModel.supportsSpeakerSelection: Boolean
-    get() = speakers.size > 1
+    get() = speakers.size > 1 || modelKind == LocalTtsModelKind.PIPER_DERIVED
 
 fun BundledTtsModel.normalizeSpeakerId(candidate: Int?): Int {
+    if (modelKind == LocalTtsModelKind.PIPER_DERIVED) {
+        return candidate?.coerceAtLeast(0) ?: defaultSpeakerId
+    }
     val resolved = candidate ?: defaultSpeakerId
     return if (speakers.any { it.id == resolved }) resolved else defaultSpeakerId
 }
