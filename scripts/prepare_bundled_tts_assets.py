@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 
 PIPER_BUNDLED_MODEL_DIRS = {"piper-en_US-libritts_r-medium"}
+PIPER_PRESET_COUNT = 10
 
 
 def parse_args() -> argparse.Namespace:
@@ -99,11 +100,20 @@ def write_tokens(tokens_path: Path, config: dict) -> None:
 
 def write_speaker_manifest(manifest_path: Path, config: dict) -> None:
     speaker_items = sorted((config.get("speaker_id_map") or {}).items(), key=lambda item: item[1])
-    preset_count = min(len(speaker_items), 48)
+    preset_count = min(len(speaker_items), PIPER_PRESET_COUNT)
+    if preset_count == 0:
+        return
+    selected_items = []
+    if len(speaker_items) <= preset_count:
+        selected_items = speaker_items
+    else:
+        for index in range(preset_count):
+            mapped_index = round(index * (len(speaker_items) - 1) / (preset_count - 1))
+            selected_items.append(speaker_items[mapped_index])
     with manifest_path.open("w", encoding="utf-8") as file:
         file.write("speaker_id\tcode\tdisplay_label\taccent_label\tgender\n")
-        for index, (code, speaker_id) in enumerate(speaker_items[:preset_count]):
-            batch = index // 6 + 1
+        for index, (code, speaker_id) in enumerate(selected_items):
+            batch = index // 5 + 1
             file.write(f"{speaker_id}\t{code}\tSpeaker {speaker_id}\tPreset {batch}\tUNKNOWN\n")
 
 

@@ -103,7 +103,7 @@ class TtsCoreTest {
             setOf("model.onnx", "tokens.txt", "espeak-ng-data/"),
             BundledTtsModels.PiperEnUsLibriTtsRMedium.requiredInstallFiles,
         )
-        assertEquals(48, BundledTtsModels.PiperEnUsLibriTtsRMedium.speakers.size)
+        assertEquals(10, BundledTtsModels.PiperEnUsLibriTtsRMedium.speakers.size)
         assertNull(BundledTtsModels.findById("unknown-model"))
     }
 

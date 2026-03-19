@@ -49,7 +49,7 @@ val BundledTtsModel.isDownloadedModel: Boolean
 
 object BundledTtsModels {
     const val AssetRoot = "tts-models"
-    private const val PIPER_PRESET_COUNT = 48
+    private const val PIPER_PRESET_COUNT = 10
 
     val KokoroEnV019 = BundledTtsModel(
         id = "kokoro-en-v0_19",
