@@ -10,6 +10,7 @@ import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import java.io.File
 import java.util.LinkedHashMap
 import java.util.LinkedHashSet
@@ -32,6 +33,7 @@ class LocalModelTtsEngine {
     private var configuredNumThreads: Int? = null
     private var configuredMaxNumSentences: Int? = null
     private var loadedModelPath: String? = null
+    private var loadedModelDescriptor: LocalModelDescriptor? = null
     private var offlineTts: OfflineTts? = null
     private val modelCache = LinkedHashMap<String, OfflineTts>(MODEL_CACHE_CAPACITY, 0.75f, true)
     private var activeTrack: AudioTrack? = null
@@ -103,9 +105,11 @@ class LocalModelTtsEngine {
                         )
 
                         val tts = offlineTts ?: error("Offline TTS is not initialized")
+                        val descriptor = loadedModelDescriptor ?: error("Local model descriptor is not initialized")
                         val generateStartNs = System.nanoTime()
                         generateAudio(
                             tts = tts,
+                            descriptor = descriptor,
                             text = normalizedText,
                             speakerId = speakerId,
                             speed = normalizedSpeed,
@@ -175,9 +179,11 @@ class LocalModelTtsEngine {
                     synchronized(modelLock) {
                         ensureLoaded(modelPath)
                         val tts = offlineTts ?: error("Offline TTS is not initialized")
+                        val descriptor = loadedModelDescriptor ?: error("Local model descriptor is not initialized")
                         val startNs = System.nanoTime()
                         val audio = generateAudio(
                             tts = tts,
+                            descriptor = descriptor,
                             text = text,
                             speakerId = configuredSpeakerId,
                             speed = speed.coerceIn(MIN_LOCAL_SPEED, MAX_LOCAL_SPEED),
@@ -257,21 +263,25 @@ class LocalModelTtsEngine {
     }
 
     private fun ensureLoaded(modelPath: String) {
-        if (offlineTts != null && loadedModelPath == modelPath) {
+        if (offlineTts != null && loadedModelPath == modelPath && loadedModelDescriptor != null) {
             return
         }
+
+        val descriptor = LocalModelDescriptorResolver.resolve(modelPath)
 
         val cached = modelCache[modelPath]
         if (cached != null) {
             offlineTts = cached
             loadedModelPath = modelPath
+            loadedModelDescriptor = descriptor
             return
         }
 
-        val created = buildOfflineTts(modelPath)
+        val created = buildOfflineTts(descriptor)
         cacheModel(modelPath, created)
         offlineTts = created
         loadedModelPath = modelPath
+        loadedModelDescriptor = descriptor
     }
 
     private fun releaseModel() {
@@ -284,18 +294,19 @@ class LocalModelTtsEngine {
         }
         offlineTts = null
         loadedModelPath = null
+        loadedModelDescriptor = null
     }
 
     private fun preloadModel(modelPath: String) {
         if (modelCache.containsKey(modelPath)) {
             return
         }
-        val created = buildOfflineTts(modelPath)
+        val descriptor = LocalModelDescriptorResolver.resolve(modelPath)
+        val created = buildOfflineTts(descriptor)
         cacheModel(modelPath, created)
     }
 
-    private fun buildOfflineTts(modelPath: String): OfflineTts {
-        val modelDescriptor = resolveModelDescriptor(modelPath)
+    private fun buildOfflineTts(modelDescriptor: LocalModelDescriptor): OfflineTts {
         val config = createOfflineTtsConfig(modelDescriptor)
         return OfflineTts(null, config)
     }
@@ -317,46 +328,34 @@ class LocalModelTtsEngine {
         }
     }
 
-    private fun resolveModelDescriptor(path: String): LocalModelDescriptor {
-        val file = File(path)
-        val modelDir = if (file.isDirectory) file else file.parentFile
-            ?: throw IllegalArgumentException("Model path is invalid.")
-
-        val model = File(modelDir, "model.onnx")
-        val voices = File(modelDir, "voices.bin")
-        val tokens = File(modelDir, "tokens.txt")
-        val dataDir = File(modelDir, "espeak-ng-data")
-
-        val missing = buildList {
-            if (!model.exists()) add("model.onnx")
-            if (!voices.exists()) add("voices.bin")
-            if (!tokens.exists()) add("tokens.txt")
-            if (!dataDir.exists() || !dataDir.isDirectory) add("espeak-ng-data/")
-        }
-        if (missing.isNotEmpty()) {
-            throw IllegalStateException(
-                "Kokoro local model is incomplete at ${modelDir.absolutePath}. Missing: ${missing.joinToString(", ")}",
-            )
-        }
-
-        return LocalModelDescriptor(
-            model = model,
-            voices = voices,
-            tokens = tokens,
-            dataDir = dataDir,
-        )
-    }
-
     private fun createOfflineTtsConfig(descriptor: LocalModelDescriptor): OfflineTtsConfig {
         val availableCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
         val numThreads = configuredNumThreads ?: availableCores.coerceIn(1, 4)
         val modelConfig = OfflineTtsModelConfig(
-            kokoro = OfflineTtsKokoroModelConfig(
-                model = descriptor.model.absolutePath,
-                voices = descriptor.voices.absolutePath,
-                tokens = descriptor.tokens.absolutePath,
-                dataDir = descriptor.dataDir.absolutePath,
-            ),
+            vits = if (descriptor.modelKind == LocalTtsModelKind.PIPER_DERIVED) {
+                OfflineTtsVitsModelConfig(
+                    model = descriptor.model.absolutePath,
+                    lexicon = descriptor.lexicon?.absolutePath.orEmpty(),
+                    tokens = descriptor.tokens.absolutePath,
+                    dataDir = descriptor.dataDir.absolutePath,
+                    dictDir = descriptor.dictDir?.absolutePath.orEmpty(),
+                    noiseScale = 0.667f,
+                    noiseScaleW = 0.8f,
+                    lengthScale = 1.0f,
+                )
+            } else {
+                OfflineTtsVitsModelConfig()
+            },
+            kokoro = if (descriptor.modelKind == LocalTtsModelKind.KOKORO) {
+                OfflineTtsKokoroModelConfig(
+                    model = descriptor.model.absolutePath,
+                    voices = requireNotNull(descriptor.voices).absolutePath,
+                    tokens = descriptor.tokens.absolutePath,
+                    dataDir = descriptor.dataDir.absolutePath,
+                )
+            } else {
+                OfflineTtsKokoroModelConfig()
+            },
             numThreads = numThreads,
             debug = false,
             provider = "cpu",
@@ -368,8 +367,20 @@ class LocalModelTtsEngine {
         )
     }
 
-    private fun generateAudio(tts: OfflineTts, text: String, speakerId: Int, speed: Float) =
-        tts.generate(text = text, sid = speakerId.coerceIn(KOKORO_MIN_SPEAKER_ID, KOKORO_MAX_SPEAKER_ID), speed = speed)
+    private fun generateAudio(
+        tts: OfflineTts,
+        descriptor: LocalModelDescriptor,
+        text: String,
+        speakerId: Int,
+        speed: Float,
+    ) = tts.generate(
+        text = text,
+        sid = when (descriptor.modelKind) {
+            LocalTtsModelKind.KOKORO -> speakerId.coerceIn(KOKORO_MIN_SPEAKER_ID, KOKORO_MAX_SPEAKER_ID)
+            LocalTtsModelKind.PIPER_DERIVED -> 0
+        },
+        speed = speed,
+    )
 
     private fun extractAudioSamples(audio: com.k2fsa.sherpa.onnx.GeneratedAudio): ExtractedAudio {
         return ExtractedAudio(samples = audio.samples, sampleRate = audio.sampleRate)
@@ -925,13 +936,6 @@ class LocalModelTtsEngine {
         private const val MODEL_CACHE_CAPACITY = 2
     }
 }
-
-private data class LocalModelDescriptor(
-    val model: File,
-    val voices: File,
-    val tokens: File,
-    val dataDir: File,
-)
 
 data class LocalTtsBenchmarkMetrics(
     val generationMillis: Double,
