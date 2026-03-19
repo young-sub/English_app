@@ -32,6 +32,7 @@ import com.example.bookhelper.tts.BundledTtsModelInstaller
 import com.example.bookhelper.tts.BundledTtsModels
 import com.example.bookhelper.tts.TtsEnginePreference
 import com.example.bookhelper.tts.defaultSpeakerId
+import com.example.bookhelper.tts.isDownloadedModel
 import com.example.bookhelper.tts.normalizeSpeakerId
 import com.example.bookhelper.tts.requestsOnDeviceTts
 import com.example.bookhelper.tts.resolveLocalTtsEnabled
@@ -701,6 +702,10 @@ class ReaderViewModel(
 
     private fun ensureBundledModelInstalled(model: BundledTtsModel): String? {
         installedLocalModelPaths[model.id]?.let { return it }
+        if (model.isDownloadedModel) {
+            return bundledModelInstaller.resolveInstalledModelPath(model)
+                ?.also { installedLocalModelPaths[model.id] = it }
+        }
         return bundledModelInstaller.ensureInstalled(model)
             .onFailure { throwable ->
                 Log.e(

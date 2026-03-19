@@ -15,7 +15,9 @@ import com.example.bookhelper.tts.AndroidTtsManager
 import com.example.bookhelper.tts.BundledTtsModel
 import com.example.bookhelper.tts.BundledTtsModelInstaller
 import com.example.bookhelper.tts.BundledTtsModels
+import com.example.bookhelper.tts.DownloadedLocalModelRegistry
 import com.example.bookhelper.tts.TtsRoute
+import com.example.bookhelper.tts.isDownloadedModel
 import com.example.bookhelper.tts.requestsOnDeviceTts
 import com.example.bookhelper.tts.normalizeSpeakerId
 import com.example.bookhelper.tts.resolveLocalTtsEnabled
@@ -29,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 class BootViewModel(
     private val appContext: Context,
@@ -72,7 +75,11 @@ class BootViewModel(
                         BootStepResult("설정 로드 완료")
                     },
                     BootStep(BootStage.BUNDLED_ASSETS) {
-                        localModels = bundledModelInstaller.discoverBundledModels()
+                        localModels = (
+                            bundledModelInstaller.discoverBundledModels() +
+                                DownloadedLocalModelRegistry.discoverInstalledModels(File(appContext.filesDir, "tts-models"))
+                            )
+                            .distinctBy { it.id }
                         selectedModel = resolveLocalModel(localModels, settings.localModelId)
                         BootStepResult("번들 모델 ${localModels.size}개 확인")
                     },
@@ -232,7 +239,11 @@ class BootViewModel(
         preference: com.example.bookhelper.tts.TtsEnginePreference,
     ): BootLocalModelActivation {
         val normalizedSpeakerId = model.normalizeSpeakerId(requestedSpeakerId)
-        val modelPath = installer.ensureInstalled(model).getOrNull()
+        val modelPath = if (model.isDownloadedModel) {
+            installer.resolveInstalledModelPath(model)
+        } else {
+            installer.ensureInstalled(model).getOrNull()
+        }
         val modelReady = !modelPath.isNullOrBlank()
 
         manager.setLocalModelPath(modelPath)

@@ -23,7 +23,7 @@ class BundledTtsModelInstaller(context: Context) {
 
     fun ensureInstalled(model: BundledTtsModel): Result<String> {
         return runCatching {
-            val installRoot = File(appContext.filesDir, "tts-models/${model.id}")
+            val installRoot = installRootFor(model)
             if (isModelReady(installRoot, model)) {
                 return@runCatching installRoot.absolutePath
             }
@@ -46,6 +46,15 @@ class BundledTtsModelInstaller(context: Context) {
 
             installRoot.absolutePath
         }
+    }
+
+    fun resolveInstalledModelPath(model: BundledTtsModel): String? {
+        val installRoot = installRootFor(model)
+        return if (isModelReady(installRoot, model)) installRoot.absolutePath else null
+    }
+
+    fun installRootFor(model: BundledTtsModel): File {
+        return File(appContext.filesDir, "tts-models/${model.id}")
     }
 
     private fun hasAssets(assetPath: String): Boolean {
