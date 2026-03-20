@@ -78,7 +78,7 @@ class LocalTtsStandaloneProbeInstrumentedTest {
             val failureReason = engine.latestFailureReason()
             Log.i(
                 TAG,
-                "LOCAL_TTS_PROBE_RESULT success=${outcome.success} timedOut=${outcome.timedOut} failureCalled=${failureCalled.get()} failureReason=$failureReason textLength=${text.length} speed=$speed speakerId=$speakerId telemetryStartedAt=${telemetry.startedAtElapsedMs} telemetryFirstChunkGenerationMs=${telemetry.firstChunkGenerationMs} telemetryPlaybackStartDelayMs=${telemetry.playbackStartDelayMs} telemetrySegmentCount=${telemetry.segmentCount} telemetryMaxFrames=${telemetry.maxPlaybackHeadFrames} telemetryTotalFrames=${telemetry.totalFrames} telemetrySampleRate=${telemetry.sampleRate} telemetryCompleted=${telemetry.completed} telemetryTimedOut=${telemetry.timedOut}",
+                "LOCAL_TTS_PROBE_RESULT success=${outcome.success} timedOut=${outcome.timedOut} failureCalled=${failureCalled.get()} failureReason=$failureReason textLength=${text.length} speed=$speed speakerId=$speakerId telemetryStartedAt=${telemetry.startedAtElapsedMs} telemetryFirstChunkGenerationMs=${telemetry.firstChunkGenerationMs} telemetryPlaybackStartDelayMs=${telemetry.playbackStartDelayMs} telemetrySegmentCount=${telemetry.segmentCount} telemetryStreamingMode=${telemetry.streamingMode} telemetryGapCount=${telemetry.streamingGapCount} telemetryMaxGapMs=${telemetry.maxStreamingGapMs} telemetryMaxFrames=${telemetry.maxPlaybackHeadFrames} telemetryTotalFrames=${telemetry.totalFrames} telemetrySampleRate=${telemetry.sampleRate} telemetryCompleted=${telemetry.completed} telemetryTimedOut=${telemetry.timedOut}",
             )
 
             assertTrue(

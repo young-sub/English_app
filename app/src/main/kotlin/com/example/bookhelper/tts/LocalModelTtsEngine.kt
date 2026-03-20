@@ -39,6 +39,7 @@ class LocalModelTtsEngine {
     private var offlineTts: OfflineTts? = null
     private val modelCache = LinkedHashMap<String, OfflineTts>(MODEL_CACHE_CAPACITY, 0.75f, true)
     private var activeTrack: AudioTrack? = null
+    private var activePiperSession: PiperStreamingSession? = null
     private val trackLock = Any()
     private val modelLock = Any()
 
@@ -109,7 +110,17 @@ class LocalModelTtsEngine {
 
                         val tts = offlineTts ?: error("Offline TTS is not initialized")
                         val descriptor = loadedModelDescriptor ?: error("Local model descriptor is not initialized")
-                        if (segments.size > 1) {
+                        if (descriptor.modelKind == LocalTtsModelKind.PIPER_DERIVED) {
+                            generateAndPlayWithPiperSession(
+                                tts = tts,
+                                descriptor = descriptor,
+                                text = normalizedText,
+                                speakerId = speakerId,
+                                speed = normalizedSpeed,
+                                utteranceId = utteranceId,
+                            )
+                            null
+                        } else if (segments.size > 1) {
                             generateAndPlayProgressively(
                                 tts = tts,
                                 descriptor = descriptor,
@@ -158,6 +169,8 @@ class LocalModelTtsEngine {
     }
 
     fun stop() {
+        activePiperSession?.stop()
+        activePiperSession = null
         val track = synchronized(trackLock) {
             val current = activeTrack
             activeTrack = null
@@ -443,6 +456,59 @@ class LocalModelTtsEngine {
         } catch (throwable: Throwable) {
             progressiveStream.fail(throwable)
             throw throwable
+        }
+    }
+
+    private fun generateAndPlayWithPiperSession(
+        tts: OfflineTts,
+        descriptor: LocalModelDescriptor,
+        text: String,
+        speakerId: Int,
+        speed: Float,
+        utteranceId: Long,
+    ) {
+        stop()
+        if (isUtteranceSuperseded(utteranceId)) {
+            return
+        }
+
+        val session = PiperStreamingSession(
+            tts = tts,
+            utteranceId = utteranceId,
+            isUtteranceSuperseded = ::isUtteranceSuperseded,
+            updateTelemetry = { telemetry ->
+                updatePlaybackTelemetry(
+                    firstChunkGenerationMs = telemetry.firstChunkGenerationMs,
+                    generationMs = telemetry.generationMs,
+                    segmentCount = 1,
+                    totalFrames = telemetry.totalFrames,
+                    streamingMode = LocalStreamingMode.CALLBACK.name,
+                    streamingGapCount = telemetry.streamingGapCount,
+                    maxStreamingGapMs = telemetry.maxStreamingGapMs,
+                    generatedSampleCount = telemetry.generatedSampleCount,
+                    generatedSampleRate = telemetry.generatedSampleRate,
+                    generatedPcmNonEmpty = telemetry.generatedPcmNonEmpty,
+                    audioTrackMode = telemetry.audioTrackMode,
+                    audioTrackInitialized = telemetry.audioTrackInitialized,
+                    audioTrackCreateMs = telemetry.audioTrackCreateMs,
+                    audioWriteMs = telemetry.audioWriteMs,
+                    audioWriteFrames = telemetry.audioWriteFrames,
+                    audioWriteSucceeded = telemetry.audioWriteSucceeded,
+                )
+            },
+        )
+        activePiperSession = session
+        try {
+            val result = session.play(
+                text = text,
+                speakerId = normalizeSpeakerIdForGeneration(descriptor, speakerId),
+                speed = speed,
+            )
+            beginPlaybackTelemetry(totalFrames = result.totalFrames, sampleRate = result.sampleRate)
+        } finally {
+            if (activePiperSession === session) {
+                activePiperSession = null
+            }
         }
     }
 
@@ -1291,6 +1357,9 @@ class LocalModelTtsEngine {
         firstChunkGenerationMs: Double? = null,
         segmentCount: Int? = null,
         totalFrames: Int? = null,
+        streamingMode: String? = null,
+        streamingGapCount: Int? = null,
+        maxStreamingGapMs: Long? = null,
         generatedSampleCount: Int? = null,
         generatedSampleRate: Int? = null,
         generatedPcmNonEmpty: Boolean? = null,
@@ -1314,6 +1383,9 @@ class LocalModelTtsEngine {
                 firstChunkGenerationMs = firstChunkGenerationMs ?: current.firstChunkGenerationMs,
                 segmentCount = segmentCount ?: current.segmentCount,
                 totalFrames = totalFrames ?: current.totalFrames,
+                streamingMode = streamingMode ?: current.streamingMode,
+                streamingGapCount = streamingGapCount ?: current.streamingGapCount,
+                maxStreamingGapMs = maxStreamingGapMs ?: current.maxStreamingGapMs,
                 generatedSampleCount = generatedSampleCount ?: current.generatedSampleCount,
                 generatedSampleRate = generatedSampleRate ?: current.generatedSampleRate,
                 generatedPcmNonEmpty = generatedPcmNonEmpty ?: current.generatedPcmNonEmpty,
@@ -1342,7 +1414,7 @@ class LocalModelTtsEngine {
         val telemetry = playbackTelemetryRef.get()
         Log.i(
             TAG,
-            "LOCAL_TTS_TELEMETRY queueWaitMs=${telemetry.queueWaitMs} ensureLoadedMs=${telemetry.ensureLoadedMs} generationMs=${telemetry.generationMs} firstChunkGenerationMs=${telemetry.firstChunkGenerationMs} playbackStartDelayMs=${telemetry.playbackStartDelayMs} segmentCount=${telemetry.segmentCount} generatedPcmNonEmpty=${telemetry.generatedPcmNonEmpty} generatedSampleCount=${telemetry.generatedSampleCount} generatedSampleRate=${telemetry.generatedSampleRate} audioTrackMode=${telemetry.audioTrackMode} audioTrackInitialized=${telemetry.audioTrackInitialized} audioTrackCreateMs=${telemetry.audioTrackCreateMs} audioWriteMs=${telemetry.audioWriteMs} audioWriteFrames=${telemetry.audioWriteFrames} audioWriteSucceeded=${telemetry.audioWriteSucceeded} maxPlaybackHeadFrames=${telemetry.maxPlaybackHeadFrames} completed=${telemetry.completed} timedOut=${telemetry.timedOut} timeoutCause=${telemetry.timeoutCause} failureReason=${telemetry.failureReason}",
+            "LOCAL_TTS_TELEMETRY queueWaitMs=${telemetry.queueWaitMs} ensureLoadedMs=${telemetry.ensureLoadedMs} generationMs=${telemetry.generationMs} firstChunkGenerationMs=${telemetry.firstChunkGenerationMs} playbackStartDelayMs=${telemetry.playbackStartDelayMs} segmentCount=${telemetry.segmentCount} streamingMode=${telemetry.streamingMode} streamingGapCount=${telemetry.streamingGapCount} maxStreamingGapMs=${telemetry.maxStreamingGapMs} generatedPcmNonEmpty=${telemetry.generatedPcmNonEmpty} generatedSampleCount=${telemetry.generatedSampleCount} generatedSampleRate=${telemetry.generatedSampleRate} audioTrackMode=${telemetry.audioTrackMode} audioTrackInitialized=${telemetry.audioTrackInitialized} audioTrackCreateMs=${telemetry.audioTrackCreateMs} audioWriteMs=${telemetry.audioWriteMs} audioWriteFrames=${telemetry.audioWriteFrames} audioWriteSucceeded=${telemetry.audioWriteSucceeded} maxPlaybackHeadFrames=${telemetry.maxPlaybackHeadFrames} completed=${telemetry.completed} timedOut=${telemetry.timedOut} timeoutCause=${telemetry.timeoutCause} failureReason=${telemetry.failureReason}",
         )
     }
 
@@ -1373,6 +1445,12 @@ private data class ExtractedAudio(
     val sampleRate: Int,
 )
 
+internal enum class LocalStreamingMode {
+    CALLBACK,
+    SEGMENT_PROGRESSIVE,
+    BATCH,
+}
+
 internal data class LocalPlaybackTelemetry(
     val scheduledAtElapsedMs: Long = 0L,
     val runnableStartedAtElapsedMs: Long = 0L,
@@ -1383,6 +1461,9 @@ internal data class LocalPlaybackTelemetry(
     val generationMs: Double = 0.0,
     val firstChunkGenerationMs: Double = 0.0,
     val segmentCount: Int = 1,
+    val streamingMode: String = LocalStreamingMode.BATCH.name,
+    val streamingGapCount: Int = 0,
+    val maxStreamingGapMs: Long = 0L,
     val generatedSampleCount: Int = 0,
     val generatedSampleRate: Int = 0,
     val generatedPcmNonEmpty: Boolean = false,
