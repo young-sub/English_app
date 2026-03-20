@@ -494,17 +494,19 @@ class LocalModelTtsEngine {
                     audioWriteMs = telemetry.audioWriteMs,
                     audioWriteFrames = telemetry.audioWriteFrames,
                     audioWriteSucceeded = telemetry.audioWriteSucceeded,
+                    maxPlaybackHeadFrames = telemetry.maxPlaybackHeadFrames,
                 )
             },
+            onPlaybackStarted = ::beginPlaybackTelemetry,
+            onPlaybackFinished = ::finishPlaybackTelemetry,
         )
         activePiperSession = session
         try {
-            val result = session.play(
+            session.play(
                 text = text,
                 speakerId = normalizeSpeakerIdForGeneration(descriptor, speakerId),
                 speed = speed,
             )
-            beginPlaybackTelemetry(totalFrames = result.totalFrames, sampleRate = result.sampleRate)
         } finally {
             if (activePiperSession === session) {
                 activePiperSession = null

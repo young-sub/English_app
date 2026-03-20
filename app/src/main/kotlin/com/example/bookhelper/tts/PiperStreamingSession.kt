@@ -13,6 +13,8 @@ internal class PiperStreamingSession(
     private val utteranceId: Long,
     private val isUtteranceSuperseded: (Long) -> Boolean,
     private val updateTelemetry: (PiperStreamingTelemetry) -> Unit,
+    private val onPlaybackStarted: (totalFrames: Int, sampleRate: Int) -> Unit,
+    private val onPlaybackFinished: (completed: Boolean, timedOut: Boolean, timeoutCause: String?) -> Unit,
 ) {
     private val stopped = AtomicBoolean(false)
     private var activeTrack: AudioTrack? = null
@@ -56,6 +58,7 @@ internal class PiperStreamingSession(
                 val callbackNow = SystemClock.elapsedRealtime()
                 if (firstCallback) {
                     firstCallback = false
+                    onPlaybackStarted(0, sampleRate)
                     updateTelemetry(
                         PiperStreamingTelemetry(
                             firstChunkGenerationMs = nanosToMillis(System.nanoTime() - generationStartNs),
@@ -81,6 +84,7 @@ internal class PiperStreamingSession(
                 updateTelemetry(
                     PiperStreamingTelemetry(
                         totalFrames = totalFrames,
+                        maxPlaybackHeadFrames = totalFrames,
                         audioWriteMs = totalWriteMs,
                         audioWriteFrames = totalFrames,
                         audioWriteSucceeded = true,
@@ -101,6 +105,7 @@ internal class PiperStreamingSession(
                     maxStreamingGapMs = maxGapMs,
                 ),
             )
+            onPlaybackFinished(true, false, null)
             return PiperStreamingResult(
                 totalFrames = totalFrames,
                 sampleRate = sampleRate,
@@ -194,6 +199,7 @@ internal data class PiperStreamingTelemetry(
     val audioWriteFrames: Int? = null,
     val audioWriteSucceeded: Boolean? = null,
     val totalFrames: Int? = null,
+    val maxPlaybackHeadFrames: Int? = null,
 )
 
 internal data class PiperStreamingResult(
