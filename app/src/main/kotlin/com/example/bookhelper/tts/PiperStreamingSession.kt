@@ -5,6 +5,7 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import android.os.SystemClock
+import android.util.Log
 import com.k2fsa.sherpa.onnx.OfflineTts
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -21,6 +22,7 @@ internal class PiperStreamingSession(
 
     fun play(text: String, speakerId: Int, speed: Float): PiperStreamingResult {
         val sampleRate = tts.sampleRate()
+        Log.i(TAG, "play(): sampleRate=$sampleRate utteranceId=$utteranceId")
         val track = createStreamTrack(sampleRate)
             ?: throw IllegalStateException("Failed to initialize callback AudioTrack")
         activeTrack = track
@@ -34,6 +36,7 @@ internal class PiperStreamingSession(
         var lastWriteFinishedAt = 0L
 
         try {
+            Log.i(TAG, "play(): track initialized, calling play()")
             track.play()
             updateTelemetry(
                 PiperStreamingTelemetry(
@@ -48,6 +51,9 @@ internal class PiperStreamingSession(
                 sid = speakerId,
                 speed = speed,
             ) { samples ->
+                if (firstCallback) {
+                    Log.i(TAG, "callback(): first invocation size=${samples.size}")
+                }
                 if (samples.isEmpty()) {
                     return@generateWithCallback 1
                 }
@@ -74,6 +80,9 @@ internal class PiperStreamingSession(
 
                 val writeStartNs = System.nanoTime()
                 val written = writeFloatSamplesStreaming(track, samples)
+                if (firstCallback) {
+                    Log.i(TAG, "callback(): first write result=$written requested=${samples.size}")
+                }
                 totalWriteMs += nanosToMillis(System.nanoTime() - writeStartNs)
                 lastWriteFinishedAt = SystemClock.elapsedRealtime()
                 if (written != samples.size) {
@@ -105,12 +114,14 @@ internal class PiperStreamingSession(
                     maxStreamingGapMs = maxGapMs,
                 ),
             )
+            Log.i(TAG, "play(): generation completed totalFrames=$totalFrames sampleRate=$sampleRate")
             onPlaybackFinished(true, false, null)
             return PiperStreamingResult(
                 totalFrames = totalFrames,
                 sampleRate = sampleRate,
             )
         } finally {
+            Log.i(TAG, "play(): cleanupTrack()")
             cleanupTrack()
         }
     }
@@ -180,6 +191,7 @@ internal class PiperStreamingSession(
     private fun nanosToMillis(durationNs: Long): Double = durationNs / 1_000_000.0
 
     private companion object {
+        private const val TAG = "PiperStreamingSession"
         private const val CALLBACK_GAP_THRESHOLD_MS = 50L
     }
 }
