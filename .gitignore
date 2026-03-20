@@ -1,8 +1,10 @@
 .tooling/
 .worktrees/
 .gradle/
+.cxx/
 build/
 **/build/
+**/.cxx/
 .idea/
 local.properties
 keystore.properties
