@@ -11,6 +11,17 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class BundledPiperModelInstrumentedTest {
     @Test
+    fun bundledPiperCatalogIncludesFastDefaultAndOptionalMultiSpeakerModel() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val installer = BundledTtsModelInstaller(context)
+
+        val discoveredIds = installer.discoverBundledModels().map { it.id }.toSet()
+
+        assertTrue(discoveredIds.contains(BundledTtsModels.PiperEnUsLessacLow.id))
+        assertTrue(discoveredIds.contains(BundledTtsModels.PiperEnUsLibriTtsRMedium.id))
+    }
+
+    @Test
     fun bundledPiperModelIsDiscoverableWithSpeakerPresets() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val installer = BundledTtsModelInstaller(context)
@@ -18,9 +29,9 @@ class BundledPiperModelInstrumentedTest {
         val model = installer.discoverBundledModels().first { it.id == BundledTtsModels.PiperEnUsLibriTtsRMedium.id }
 
         assertEquals(LocalTtsModelKind.PIPER_DERIVED, model.modelKind)
-        assertTrue(model.speakers.size > 1)
+        assertEquals(10, model.speakers.size)
         assertEquals(0, model.speakers.first().id)
-        assertEquals(10, model.speakers[10].id)
+        assertTrue(model.speakers.last().id > model.speakers.first().id)
     }
 
     @Test
