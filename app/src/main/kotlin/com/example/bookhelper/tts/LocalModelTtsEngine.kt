@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 
-class LocalModelTtsEngine {
+class LocalModelTtsEngine : LocalRuntimeVerifier {
     private val synthesisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val playbackExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val playbackTelemetryRef = AtomicReference(LocalPlaybackTelemetry())
@@ -189,7 +189,36 @@ class LocalModelTtsEngine {
         synthesisExecutor.shutdownNow()
     }
 
-    fun benchmarkSynthesis(text: String, speed: Float): Result<LocalTtsBenchmarkMetrics> {
+    override fun verifyRuntimeReady(speed: Float): Result<Unit> {
+        val modelPath = configuredModelPath ?: return Result.failure(IllegalStateException("Model path is not configured"))
+        val readinessText = LOCAL_RUNTIME_SMOKE_CHECK_TEXT
+
+        return runCatching {
+            synthesisExecutor.submit(
+                Callable {
+                    synchronized(modelLock) {
+                        ensureLoaded(modelPath)
+                        val tts = offlineTts ?: error("Offline TTS is not initialized")
+                        val descriptor = loadedModelDescriptor ?: error("Local model descriptor is not initialized")
+                        val segments = synthesisSegments(readinessText)
+                        val firstSegment = segments.firstOrNull() ?: readinessText
+                        val generated = generateAudio(
+                            tts = tts,
+                            descriptor = descriptor,
+                            text = firstSegment,
+                            speakerId = configuredSpeakerId,
+                            speed = speed.coerceIn(MIN_LOCAL_SPEED, MAX_LOCAL_SPEED),
+                        )
+                        if (generated.samples.isEmpty() || generated.sampleRate <= 0) {
+                            throw IllegalStateException("Generated local readiness audio is empty or sample rate is invalid")
+                        }
+                    }
+                },
+            ).get()
+        }
+    }
+
+    override fun benchmarkSynthesis(text: String, speed: Float): Result<LocalTtsBenchmarkMetrics> {
         val modelPath = configuredModelPath ?: return Result.failure(IllegalStateException("Model path is not configured"))
         if (text.isBlank()) {
             return Result.failure(IllegalArgumentException("Text is blank"))
@@ -1426,6 +1455,7 @@ class LocalModelTtsEngine {
         const val TAG = "LocalModelTtsEngine"
         const val MIN_LOCAL_SPEED = 0.85f
         const val MAX_LOCAL_SPEED = 1.15f
+        private const val LOCAL_RUNTIME_SMOKE_CHECK_TEXT = "Ready."
         private const val KOKORO_MIN_SPEAKER_ID = 0
         private const val KOKORO_MAX_SPEAKER_ID = 10
         private const val MODEL_CACHE_CAPACITY = 2
