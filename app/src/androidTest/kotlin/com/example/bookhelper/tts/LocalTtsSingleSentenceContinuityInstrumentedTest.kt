@@ -11,14 +11,20 @@ import org.junit.runner.RunWith
 class LocalTtsSingleSentenceContinuityInstrumentedTest {
     @Test
     fun longSingleSentenceStartsBeforeGenerationFinishesWithoutLargeGaps() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val args = InstrumentationRegistry.getArguments()
         val installer = BundledTtsModelInstaller(context)
         val engine = LocalModelTtsEngine()
 
         try {
-            val modelPath = installer.ensureInstalled(BundledTtsModels.DefaultEnglish).getOrThrow()
+            val model = resolveBundledModel(
+                installer = installer,
+                requestedModelId = args.getString(ARG_MODEL_ID)?.trim().orEmpty().ifBlank { DEFAULT_MODEL_ID },
+            )
+            val modelPath = installer.ensureInstalled(model).getOrThrow()
             engine.setModelPath(modelPath)
-            engine.setSpeakerId(BundledTtsModels.DefaultEnglish.defaultSpeakerId)
+            engine.setSpeakerId(model.defaultSpeakerId)
 
             val accepted = engine.speakAsync(
                 text = "This local TTS comparison sample uses exactly ten simple words.",
@@ -39,8 +45,24 @@ class LocalTtsSingleSentenceContinuityInstrumentedTest {
             assertTrue("Expected callback streaming mode. telemetry=$telemetry", telemetry.streamingMode == LocalStreamingMode.CALLBACK.name)
             assertTrue("Expected playback start before full generation finishes. telemetry=$telemetry", telemetry.playbackStartDelayMs in 1 until telemetry.generationMs.toLong())
             assertTrue("Expected no large callback gaps. telemetry=$telemetry", telemetry.maxStreamingGapMs < 500)
+            assertTrue("Expected callback-path write telemetry. telemetry=$telemetry", telemetry.audioWriteFrames > 0)
+            assertTrue("Expected callback-path generated sample telemetry. telemetry=$telemetry", telemetry.generatedSampleCount > 0)
         } finally {
             engine.shutdown()
         }
+    }
+
+    private fun resolveBundledModel(installer: BundledTtsModelInstaller, requestedModelId: String?): BundledTtsModel {
+        if (requestedModelId.isNullOrBlank()) {
+            return BundledTtsModels.PiperEnUsLibriTtsRMedium
+        }
+        return installer.discoverBundledModels().firstOrNull { it.id.equals(requestedModelId, ignoreCase = true) }
+            ?: BundledTtsModels.findById(requestedModelId)
+            ?: error("Unknown bundled model id: $requestedModelId")
+    }
+
+    private companion object {
+        const val ARG_MODEL_ID = "localTtsModelId"
+        const val DEFAULT_MODEL_ID = "piper-en_us-libritts_r-medium"
     }
 }

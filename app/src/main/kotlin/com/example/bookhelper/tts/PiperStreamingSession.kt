@@ -34,6 +34,7 @@ internal class PiperStreamingSession(
         var gapCount = 0
         var maxGapMs = 0L
         var lastWriteFinishedAt = 0L
+        var callbackCount = 0
 
         try {
             Log.i(TAG, "play(): track initialized, calling play()")
@@ -51,9 +52,6 @@ internal class PiperStreamingSession(
                 sid = speakerId,
                 speed = speed,
             ) { samples ->
-                if (firstCallback) {
-                    Log.i(TAG, "callback(): first invocation size=${samples.size}")
-                }
                 if (samples.isEmpty()) {
                     return@generateWithCallback 1
                 }
@@ -80,9 +78,6 @@ internal class PiperStreamingSession(
 
                 val writeStartNs = System.nanoTime()
                 val written = writeFloatSamplesStreaming(track, samples)
-                if (firstCallback) {
-                    Log.i(TAG, "callback(): first write result=$written requested=${samples.size}")
-                }
                 totalWriteMs += nanosToMillis(System.nanoTime() - writeStartNs)
                 lastWriteFinishedAt = SystemClock.elapsedRealtime()
                 if (written != samples.size) {
@@ -90,28 +85,32 @@ internal class PiperStreamingSession(
                 }
 
                 totalFrames += written
-                updateTelemetry(
-                    PiperStreamingTelemetry(
-                        totalFrames = totalFrames,
-                        maxPlaybackHeadFrames = totalFrames,
-                        audioWriteMs = totalWriteMs,
-                        audioWriteFrames = totalFrames,
-                        audioWriteSucceeded = true,
-                        streamingGapCount = gapCount,
-                        maxStreamingGapMs = maxGapMs,
-                    ),
-                )
+                callbackCount += 1
+                if (shouldEmitCallbackTelemetryUpdate(callbackCount)) {
+                    updateTelemetry(
+                        PiperStreamingTelemetry(
+                            totalFrames = totalFrames,
+                            maxPlaybackHeadFrames = totalFrames,
+                            audioWriteMs = totalWriteMs,
+                            audioWriteFrames = totalFrames,
+                            audioWriteSucceeded = true,
+                            streamingGapCount = gapCount,
+                            maxStreamingGapMs = maxGapMs,
+                        ),
+                    )
+                }
                 1
             }
 
             updateTelemetry(
-                PiperStreamingTelemetry(
+                finalizePiperStreamingTelemetry(
                     generationMs = nanosToMillis(System.nanoTime() - generationStartNs),
                     generatedSampleCount = generatedAudio.samples.size,
                     generatedSampleRate = generatedAudio.sampleRate,
-                    generatedPcmNonEmpty = generatedAudio.samples.isNotEmpty() && generatedAudio.sampleRate > 0,
-                    streamingGapCount = gapCount,
-                    maxStreamingGapMs = maxGapMs,
+                    totalFrames = totalFrames,
+                    totalWriteMs = totalWriteMs,
+                    gapCount = gapCount,
+                    maxGapMs = maxGapMs,
                 ),
             )
             Log.i(TAG, "play(): generation completed totalFrames=$totalFrames sampleRate=$sampleRate")
@@ -195,6 +194,36 @@ internal class PiperStreamingSession(
         private const val CALLBACK_GAP_THRESHOLD_MS = 50L
     }
 }
+
+internal fun shouldEmitCallbackTelemetryUpdate(callbackCount: Int): Boolean {
+    return callbackCount <= 1 || (callbackCount - 1) % CALLBACK_TELEMETRY_UPDATE_INTERVAL == 0
+}
+
+internal fun finalizePiperStreamingTelemetry(
+    generationMs: Double,
+    generatedSampleCount: Int,
+    generatedSampleRate: Int,
+    totalFrames: Int,
+    totalWriteMs: Double,
+    gapCount: Int,
+    maxGapMs: Long,
+): PiperStreamingTelemetry {
+    return PiperStreamingTelemetry(
+        generationMs = generationMs,
+        generatedSampleCount = generatedSampleCount,
+        generatedSampleRate = generatedSampleRate,
+        generatedPcmNonEmpty = generatedSampleCount > 0 && generatedSampleRate > 0,
+        streamingGapCount = gapCount,
+        maxStreamingGapMs = maxGapMs,
+        totalFrames = totalFrames,
+        maxPlaybackHeadFrames = totalFrames,
+        audioWriteMs = totalWriteMs,
+        audioWriteFrames = totalFrames,
+        audioWriteSucceeded = totalFrames > 0,
+    )
+}
+
+private const val CALLBACK_TELEMETRY_UPDATE_INTERVAL = 4
 
 internal data class PiperStreamingTelemetry(
     val firstChunkGenerationMs: Double? = null,
