@@ -6,8 +6,12 @@ import argparse
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
-PIPER_BUNDLED_MODEL_DIRS = {"piper-en_US-libritts_r-medium"}
+PIPER_BUNDLED_MODEL_DIRS = {
+    "lessac-low": "piper-en_US-lessac-low",
+    "piper-en_US-libritts_r-medium": "piper-en_US-libritts_r-medium",
+}
 PIPER_PRESET_COUNT = 10
 
 
@@ -32,10 +36,10 @@ def main() -> None:
     for child in sorted(source_root.iterdir()):
         if not child.is_dir():
             continue
-        if child.name not in PIPER_BUNDLED_MODEL_DIRS:
+        output_dir_name = PIPER_BUNDLED_MODEL_DIRS.get(child.name)
+        if output_dir_name is None:
             continue
-        if child.name == "piper-en_US-libritts_r-medium":
-            prepare_piper_dir(child, dest_root / child.name, espeak_source)
+        prepare_piper_dir(child, dest_root / output_dir_name, espeak_source)
 
 
 def prepare_piper_dir(source: Path, dest: Path, espeak_source: Path) -> None:
@@ -68,7 +72,7 @@ def prepare_piper_dir(source: Path, dest: Path, espeak_source: Path) -> None:
     write_speaker_manifest(dest / "speaker-manifest.tsv", config)
 
 
-def patch_onnx_metadata(onnx_module, model_path: Path, config: dict) -> None:
+def patch_onnx_metadata(onnx_module, model_path: Path, config: dict[str, Any]) -> None:
     model = onnx_module.load(str(model_path))
     existing = {entry.key: entry for entry in model.metadata_props}
     metadata = {
@@ -90,7 +94,7 @@ def patch_onnx_metadata(onnx_module, model_path: Path, config: dict) -> None:
     onnx_module.save(model, str(model_path))
 
 
-def write_tokens(tokens_path: Path, config: dict) -> None:
+def write_tokens(tokens_path: Path, config: dict[str, Any]) -> None:
     with tokens_path.open("wb") as file:
         for symbol, ids in config["phoneme_id_map"].items():
             if symbol == "\n":
@@ -98,7 +102,7 @@ def write_tokens(tokens_path: Path, config: dict) -> None:
             file.write(f"{symbol} {ids[0]}\n".encode("utf-8"))
 
 
-def write_speaker_manifest(manifest_path: Path, config: dict) -> None:
+def write_speaker_manifest(manifest_path: Path, config: dict[str, Any]) -> None:
     speaker_items = sorted((config.get("speaker_id_map") or {}).items(), key=lambda item: item[1])
     preset_count = min(len(speaker_items), PIPER_PRESET_COUNT)
     if preset_count == 0:

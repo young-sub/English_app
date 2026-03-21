@@ -95,11 +95,24 @@ object BundledTtsModels {
         modelFormat = LocalTtsModelFormat.PIPER_ONNX,
     )
 
+    val PiperEnUsLessacLow = BundledTtsModel(
+        id = "piper-en_us-lessac-low",
+        displayName = "Piper EN Lessac Low",
+        shortLabel = "Piper Lessac",
+        assetDirectory = "$AssetRoot/piper-en_US-lessac-low",
+        speakers = listOf(
+            LocalSpeakerProfile(0, "speaker_0", "Speaker 0", SpeakerGender.UNKNOWN, "General"),
+        ),
+        modelKind = LocalTtsModelKind.PIPER_DERIVED,
+        modelFormat = LocalTtsModelFormat.PIPER_ONNX,
+    )
+
     val All: List<BundledTtsModel> = listOf(
+        PiperEnUsLessacLow,
         PiperEnUsLibriTtsRMedium,
     )
 
-    val DefaultEnglish: BundledTtsModel = PiperEnUsLibriTtsRMedium
+    val DefaultEnglish: BundledTtsModel = PiperEnUsLessacLow
 
     fun findById(id: String?): BundledTtsModel? {
         if (id.isNullOrBlank()) {
