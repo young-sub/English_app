@@ -105,30 +105,16 @@ class AndroidTtsManager(context: Context) : TextToSpeech.OnInitListener {
             return false
         }
 
-        val result = localModelTtsEngine
-            .benchmarkSynthesis(
-                text = "Ready.",
-                speed = speechRate,
-            )
-        result.exceptionOrNull()?.let { throwable ->
+        val outcome = verifyLocalRuntimeReadiness(localModelTtsEngine, speechRate) { throwable ->
             Log.e(
                 TAG,
                 "Local model runtime verification failed. Falling back to system TTS.",
                 throwable,
             )
         }
-        localRuntimeReady = result.isSuccess
+        localRuntimeReady = outcome.ready
         localRuntimeDirty = false
-        localRuntimeLastError = if (result.isSuccess) {
-            null
-        } else {
-            val throwable = result.exceptionOrNull()
-            if (throwable == null) {
-                "runtime-verification-failed"
-            } else {
-                "${throwable::class.java.simpleName}: ${throwable.message ?: "(no message)"}"
-            }
-        }
+        localRuntimeLastError = outcome.failureReason
         return localRuntimeReady
     }
 
@@ -417,3 +403,36 @@ data class TtsSpeakResult(
     val route: TtsRoute,
     val reason: String?,
 )
+
+internal interface LocalRuntimeVerifier {
+    fun verifyRuntimeReady(speed: Float): Result<Unit>
+
+    fun benchmarkSynthesis(text: String, speed: Float): Result<LocalTtsBenchmarkMetrics>
+}
+
+internal data class LocalRuntimeReadinessOutcome(
+    val ready: Boolean,
+    val failureReason: String?,
+)
+
+internal fun verifyLocalRuntimeReadiness(
+    verifier: LocalRuntimeVerifier,
+    speed: Float,
+    onVerificationFailed: (Throwable) -> Unit = {},
+): LocalRuntimeReadinessOutcome {
+    val result = verifier.verifyRuntimeReady(speed)
+    val throwable = result.exceptionOrNull()
+    if (throwable != null) {
+        onVerificationFailed(throwable)
+    }
+    return LocalRuntimeReadinessOutcome(
+        ready = result.isSuccess,
+        failureReason = throwable?.let {
+            "${it::class.java.simpleName}: ${it.message ?: "(no message)"}"
+        } ?: if (result.isSuccess) {
+            null
+        } else {
+            "runtime-verification-failed"
+        },
+    )
+}
