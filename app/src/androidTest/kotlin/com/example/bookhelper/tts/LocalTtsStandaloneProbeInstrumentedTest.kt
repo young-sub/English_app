@@ -38,7 +38,7 @@ class LocalTtsStandaloneProbeInstrumentedTest {
         val model = if (modelPathOverride == null) {
             resolveBundledModel(installer, requestedModelId)
         } else {
-            BundledTtsModels.findById(requestedModelId) ?: BundledTtsModels.DefaultEnglish
+            BundledTtsModels.findById(requestedModelId) ?: BundledTtsModels.PiperEnUsLibriTtsRMedium
         }
         val modelPath = modelPathOverride ?: installer.ensureInstalled(model).getOrThrow()
         val speakerId = args.getString(ARG_SPEAKER_ID)?.toIntOrNull()
@@ -55,7 +55,7 @@ class LocalTtsStandaloneProbeInstrumentedTest {
             val warmup = engine.benchmarkSynthesis(text = "Ready.", speed = speed).getOrThrow()
             Log.i(
                 TAG,
-                "LOCAL_TTS_PROBE_WARMUP generationMs=${warmup.generationMillis} firstChunkGenerationMs=${warmup.firstChunkGenerationMillis} segmentCount=${warmup.segmentCount} durationMs=${warmup.audioDurationMillis} rtf=${warmup.realTimeFactor}",
+                "LOCAL_TTS_PROBE_WARMUP modelId=${model.id} generationTotalMs=${warmup.generationMillis} firstChunkGenerationMs=${warmup.firstChunkGenerationMillis} segmentCount=${warmup.segmentCount} durationMs=${warmup.audioDurationMillis} rtf=${warmup.realTimeFactor}",
             )
 
             val accepted = engine.speakAsync(
@@ -78,7 +78,7 @@ class LocalTtsStandaloneProbeInstrumentedTest {
             val failureReason = engine.latestFailureReason()
             Log.i(
                 TAG,
-                "LOCAL_TTS_PROBE_RESULT success=${outcome.success} timedOut=${outcome.timedOut} failureCalled=${failureCalled.get()} failureReason=$failureReason textLength=${text.length} speed=$speed speakerId=$speakerId telemetryStartedAt=${telemetry.startedAtElapsedMs} telemetryFirstChunkGenerationMs=${telemetry.firstChunkGenerationMs} telemetryPlaybackStartDelayMs=${telemetry.playbackStartDelayMs} telemetrySegmentCount=${telemetry.segmentCount} telemetryStreamingMode=${telemetry.streamingMode} telemetryGapCount=${telemetry.streamingGapCount} telemetryMaxGapMs=${telemetry.maxStreamingGapMs} telemetryMaxFrames=${telemetry.maxPlaybackHeadFrames} telemetryTotalFrames=${telemetry.totalFrames} telemetrySampleRate=${telemetry.sampleRate} telemetryCompleted=${telemetry.completed} telemetryTimedOut=${telemetry.timedOut}",
+                "LOCAL_TTS_PROBE_RESULT modelId=${model.id} success=${outcome.success} timedOut=${outcome.timedOut} failureCalled=${failureCalled.get()} failureReason=$failureReason textLength=${text.length} speed=$speed speakerId=$speakerId queueWaitMs=${telemetry.queueWaitMs} ensureLoadedMs=${telemetry.ensureLoadedMs} firstChunkGenerationMs=${telemetry.firstChunkGenerationMs} playbackStartDelayMs=${telemetry.playbackStartDelayMs} streamingMode=${telemetry.streamingMode} playbackGenerationTotalMs=${telemetry.generationMs} synthesisGenerationTotalMs=${warmup.generationMillis} telemetryStartedAt=${telemetry.startedAtElapsedMs} telemetrySegmentCount=${telemetry.segmentCount} telemetryGapCount=${telemetry.streamingGapCount} telemetryMaxGapMs=${telemetry.maxStreamingGapMs} telemetryMaxFrames=${telemetry.maxPlaybackHeadFrames} telemetryTotalFrames=${telemetry.totalFrames} telemetrySampleRate=${telemetry.sampleRate} telemetryCompleted=${telemetry.completed} telemetryTimedOut=${telemetry.timedOut}",
             )
 
             assertTrue(
@@ -138,7 +138,7 @@ class LocalTtsStandaloneProbeInstrumentedTest {
 
     private fun resolveBundledModel(installer: BundledTtsModelInstaller, requestedModelId: String?): BundledTtsModel {
         if (requestedModelId.isNullOrBlank()) {
-            return BundledTtsModels.DefaultEnglish
+            return BundledTtsModels.PiperEnUsLibriTtsRMedium
         }
         return installer.discoverBundledModels().firstOrNull { it.id.equals(requestedModelId, ignoreCase = true) }
             ?: BundledTtsModels.findById(requestedModelId)

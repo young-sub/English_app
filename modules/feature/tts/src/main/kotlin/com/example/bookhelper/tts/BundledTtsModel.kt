@@ -73,29 +73,36 @@ object BundledTtsModels {
         modelFormat = LocalTtsModelFormat.KOKORO_ONNX,
     )
 
+    val PiperEnUsLessacLow = BundledTtsModel(
+        id = "piper-en_us-lessac-low",
+        displayName = "Piper EN Lessac Low",
+        shortLabel = "Piper Lessac",
+        assetDirectory = "$AssetRoot/piper-en_US-lessac-low",
+        speakers = listOf(
+            LocalSpeakerProfile(
+                id = 0,
+                code = "default",
+                displayLabel = "Default",
+                gender = SpeakerGender.UNKNOWN,
+                accentLabel = "General",
+            ),
+        ),
+        modelKind = LocalTtsModelKind.PIPER_DERIVED,
+        modelFormat = LocalTtsModelFormat.PIPER_ONNX,
+    )
+
     val PiperEnUsLibriTtsRMedium = BundledTtsModel(
         id = "piper-en_us-libritts_r-medium",
         displayName = "Piper EN LibriTTS-R Medium",
         shortLabel = "Piper LibriTTS-R",
         assetDirectory = "$AssetRoot/piper-en_US-libritts_r-medium",
-        speakers = buildList {
-            repeat(PIPER_PRESET_COUNT) { index ->
-                add(
-                    LocalSpeakerProfile(
-                        id = index,
-                        code = "speaker_$index",
-                        displayLabel = "Speaker $index",
-                        gender = SpeakerGender.UNKNOWN,
-                        accentLabel = "Preset ${index / 6 + 1}",
-                    ),
-                )
-            }
-        },
+        speakers = buildPiperPresetSpeakers(),
         modelKind = LocalTtsModelKind.PIPER_DERIVED,
         modelFormat = LocalTtsModelFormat.PIPER_ONNX,
     )
 
     val All: List<BundledTtsModel> = listOf(
+        PiperEnUsLessacLow,
         PiperEnUsLibriTtsRMedium,
     )
 
@@ -106,5 +113,21 @@ object BundledTtsModels {
             return null
         }
         return All.firstOrNull { it.id.equals(id, ignoreCase = true) }
+    }
+
+    private fun buildPiperPresetSpeakers(): List<LocalSpeakerProfile> {
+        return buildList {
+            repeat(PIPER_PRESET_COUNT) { index ->
+                add(
+                    LocalSpeakerProfile(
+                        id = index,
+                        code = "speaker_$index",
+                        displayLabel = "Speaker $index",
+                        gender = SpeakerGender.UNKNOWN,
+                        accentLabel = "Preset ${index / 5 + 1}",
+                    ),
+                )
+            }
+        }
     }
 }

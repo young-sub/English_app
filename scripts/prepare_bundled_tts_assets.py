@@ -7,7 +7,10 @@ import json
 import shutil
 from pathlib import Path
 
-PIPER_BUNDLED_MODEL_DIRS = {"piper-en_US-libritts_r-medium"}
+PIPER_BUNDLED_MODEL_DIRS = {
+    "lessac-low": "piper-en_US-lessac-low",
+    "piper-en_US-libritts_r-medium": "piper-en_US-libritts_r-medium",
+}
 PIPER_PRESET_COUNT = 10
 
 
@@ -32,10 +35,10 @@ def main() -> None:
     for child in sorted(source_root.iterdir()):
         if not child.is_dir():
             continue
-        if child.name not in PIPER_BUNDLED_MODEL_DIRS:
+        output_dir_name = PIPER_BUNDLED_MODEL_DIRS.get(child.name)
+        if output_dir_name is None:
             continue
-        if child.name == "piper-en_US-libritts_r-medium":
-            prepare_piper_dir(child, dest_root / child.name, espeak_source)
+        prepare_piper_dir(child, dest_root / output_dir_name, espeak_source)
 
 
 def prepare_piper_dir(source: Path, dest: Path, espeak_source: Path) -> None:
