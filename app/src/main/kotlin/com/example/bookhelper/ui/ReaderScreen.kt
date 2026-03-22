@@ -1214,56 +1214,13 @@ private fun BoxScope.SnapshotSearchControlSubtree(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (isSpeaking) {
-                Box(
-                    modifier = Modifier
-                        .size(60.dp)
-                        .background(Color(0xDCEE4444), CircleShape)
-                        .border(width = 2.dp, color = Color(0xFFFFE2E2), shape = CircleShape)
-                        .clickable(
-                            enabled = !isSnapshotProcessing && !isGalleryPicking,
-                            role = Role.Button,
-                            onClick = onStopSpeaking,
-                        )
-                        .semantics { contentDescription = "읽기 중지" },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Canvas(modifier = Modifier.size(22.dp)) {
-                        drawRoundRect(
-                            color = Color.White,
-                            topLeft = Offset(size.width * 0.2f, size.height * 0.2f),
-                            size = androidx.compose.ui.geometry.Size(size.width * 0.6f, size.height * 0.6f),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f),
-                        )
-                    }
-                }
-            }
-
-            if (canReplaySelection) {
-                Box(
-                    modifier = Modifier
-                        .size(60.dp)
-                        .background(Color(0xDD2563EB), CircleShape)
-                        .border(width = 2.dp, color = Color(0xFFDBEAFE), shape = CircleShape)
-                        .clickable(
-                            enabled = !isSnapshotProcessing && !isGalleryPicking,
-                            role = Role.Button,
-                            onClick = onReplaySelection,
-                        )
-                        .semantics { contentDescription = "선택 영역 다시 읽기" },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Canvas(modifier = Modifier.size(24.dp)) {
-                        val triangle = Path().apply {
-                            moveTo(size.width * 0.25f, size.height * 0.15f)
-                            lineTo(size.width * 0.78f, size.height * 0.5f)
-                            lineTo(size.width * 0.25f, size.height * 0.85f)
-                            close()
-                        }
-                        drawPath(path = triangle, color = Color.White)
-                    }
-                }
-            }
+            SelectionActionButton(
+                isSpeaking = isSpeaking,
+                canReplaySelection = canReplaySelection,
+                enabled = !isSnapshotProcessing && !isGalleryPicking,
+                onStopSpeaking = onStopSpeaking,
+                onReplaySelection = onReplaySelection,
+            )
 
             if (cameraPermissionGranted) {
                 Box(
@@ -1289,32 +1246,6 @@ private fun BoxScope.SnapshotSearchControlSubtree(
                             color = Color(0xFF334155),
                             radius = size.minDimension * 0.28f,
                         )
-                    }
-                }
-            }
-
-            if (canReplaySelection) {
-                Box(
-                    modifier = Modifier
-                        .size(60.dp)
-                        .background(Color(0xDD2563EB), CircleShape)
-                        .border(width = 2.dp, color = Color(0xFFDBEAFE), shape = CircleShape)
-                        .clickable(
-                            enabled = !isSnapshotProcessing && !isGalleryPicking,
-                            role = Role.Button,
-                            onClick = onReplaySelection,
-                        )
-                        .semantics { contentDescription = "선택 영역 다시 읽기" },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Canvas(modifier = Modifier.size(24.dp)) {
-                        val triangle = Path().apply {
-                            moveTo(size.width * 0.25f, size.height * 0.15f)
-                            lineTo(size.width * 0.78f, size.height * 0.5f)
-                            lineTo(size.width * 0.25f, size.height * 0.85f)
-                            close()
-                        }
-                        drawPath(path = triangle, color = Color.White)
                     }
                 }
             }
@@ -1407,30 +1338,13 @@ private fun BoxScope.SnapshotSearchControlSubtree(
                 }
             }
 
-            if (isSpeaking) {
-                Box(
-                    modifier = Modifier
-                        .size(60.dp)
-                        .background(Color(0xDCEE4444), CircleShape)
-                        .border(width = 2.dp, color = Color(0xFFFFE2E2), shape = CircleShape)
-                        .clickable(
-                            enabled = !isSnapshotProcessing && !isGalleryPicking,
-                            role = Role.Button,
-                            onClick = onStopSpeaking,
-                        )
-                        .semantics { contentDescription = "읽기 중지" },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Canvas(modifier = Modifier.size(22.dp)) {
-                        drawRoundRect(
-                            color = Color.White,
-                            topLeft = Offset(size.width * 0.2f, size.height * 0.2f),
-                            size = androidx.compose.ui.geometry.Size(size.width * 0.6f, size.height * 0.6f),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f),
-                        )
-                    }
-                }
-            }
+            SelectionActionButton(
+                isSpeaking = isSpeaking,
+                canReplaySelection = canReplaySelection,
+                enabled = !isSnapshotProcessing && !isGalleryPicking,
+                onStopSpeaking = onStopSpeaking,
+                onReplaySelection = onReplaySelection,
+            )
 
             Box(
                 modifier = Modifier
@@ -1465,6 +1379,61 @@ private fun BoxScope.SnapshotSearchControlSubtree(
                         radius = size.minDimension * 0.28f,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectionActionButton(
+    isSpeaking: Boolean,
+    canReplaySelection: Boolean,
+    enabled: Boolean,
+    onStopSpeaking: () -> Unit,
+    onReplaySelection: () -> Unit,
+) {
+    val isReplayEnabled = !isSpeaking && canReplaySelection
+    val backgroundColor = when {
+        isSpeaking -> Color(0xDCEE4444)
+        isReplayEnabled -> Color(0xDD2563EB)
+        else -> Color(0xAA64748B)
+    }
+    val borderColor = when {
+        isSpeaking -> Color(0xFFFFE2E2)
+        isReplayEnabled -> Color(0xFFDBEAFE)
+        else -> Color(0xFFCBD5E1)
+    }
+    val contentDescription = if (isSpeaking) "읽기 중지" else "선택 영역 다시 읽기"
+
+    Box(
+        modifier = Modifier
+            .size(60.dp)
+            .background(backgroundColor, CircleShape)
+            .border(width = 2.dp, color = borderColor, shape = CircleShape)
+            .clickable(
+                enabled = enabled && (isSpeaking || canReplaySelection),
+                role = Role.Button,
+                onClick = if (isSpeaking) onStopSpeaking else onReplaySelection,
+            )
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(24.dp)) {
+            if (isSpeaking) {
+                drawRoundRect(
+                    color = Color.White,
+                    topLeft = Offset(size.width * 0.2f, size.height * 0.2f),
+                    size = androidx.compose.ui.geometry.Size(size.width * 0.6f, size.height * 0.6f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f),
+                )
+            } else {
+                val triangle = Path().apply {
+                    moveTo(size.width * 0.25f, size.height * 0.15f)
+                    lineTo(size.width * 0.78f, size.height * 0.5f)
+                    lineTo(size.width * 0.25f, size.height * 0.85f)
+                    close()
+                }
+                drawPath(path = triangle, color = Color.White.copy(alpha = if (isReplayEnabled) 1f else 0.72f))
             }
         }
     }
