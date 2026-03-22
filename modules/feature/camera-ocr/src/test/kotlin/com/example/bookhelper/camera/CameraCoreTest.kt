@@ -63,4 +63,22 @@ class CameraCoreTest {
         assertEquals(0f, normalized.offsetX)
         assertEquals(0f, normalized.offsetY)
     }
+
+    @Test
+    fun viewportTransformReducerKeepsGestureFocalPointStableWhileZooming() {
+        val reducer = ViewportTransformReducer(minScale = 1f, maxScale = 4f)
+
+        val transformed = reducer.applyGesture(
+            current = ViewportTransformState.Identity,
+            zoomChange = 2f,
+            panX = 0f,
+            panY = 0f,
+            focalX = 120f,
+            focalY = 80f,
+        )
+
+        assertEquals(2f, transformed.scale)
+        assertEquals(-120f, transformed.offsetX)
+        assertEquals(-80f, transformed.offsetY)
+    }
 }

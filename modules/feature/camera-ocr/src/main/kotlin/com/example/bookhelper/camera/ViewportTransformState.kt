@@ -19,14 +19,30 @@ class ViewportTransformReducer(
         zoomChange: Float,
         panX: Float,
         panY: Float,
+        focalX: Float? = null,
+        focalY: Float? = null,
     ): ViewportTransformState {
+        val currentScale = current.scale.coerceAtLeast(minScale)
         val nextScale = (current.scale * zoomChange).coerceIn(minScale, maxScale)
-        val normalizedPanX = if (nextScale <= minScale) 0f else current.offsetX + panX
-        val normalizedPanY = if (nextScale <= minScale) 0f else current.offsetY + panY
+        if (nextScale <= minScale) {
+            return ViewportTransformState.Identity
+        }
+
+        val scaleFactor = nextScale / currentScale
+        val focalAdjustedOffsetX = if (focalX != null) {
+            focalX - ((focalX - current.offsetX) * scaleFactor)
+        } else {
+            current.offsetX
+        }
+        val focalAdjustedOffsetY = if (focalY != null) {
+            focalY - ((focalY - current.offsetY) * scaleFactor)
+        } else {
+            current.offsetY
+        }
         return current.copy(
             scale = nextScale,
-            offsetX = normalizedPanX,
-            offsetY = normalizedPanY,
+            offsetX = focalAdjustedOffsetX + panX,
+            offsetY = focalAdjustedOffsetY + panY,
         )
     }
 
