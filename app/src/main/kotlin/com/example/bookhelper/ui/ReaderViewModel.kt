@@ -670,6 +670,20 @@ class ReaderViewModel(
         }
     }
 
+    fun replaySelection() {
+        val state = _uiState.value
+        val text = state.selectedSentence
+            ?.takeIf { it.isNotBlank() }
+            ?: wordsToReadableText(state.selectedWords).takeIf { it.isNotBlank() }
+            ?: state.selectedWord?.text
+            ?: return
+
+        speakWithCurrentTts(text, utteranceId = "replay-selection")
+        _uiState.update {
+            it.copy(message = "선택 영역 다시 읽기")
+        }
+    }
+
     private suspend fun loadSavedWords(vocabularyDao: VocabularyDao): List<SavedWordItem> {
         return vocabularyDao.findAll().map {
             SavedWordItem(

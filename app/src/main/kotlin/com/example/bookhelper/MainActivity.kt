@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
                             onDeleteSavedWord = vm::deleteSavedWord,
                             onSpeakWordFromDictionary = vm::speakWordFromDictionary,
                             onStopSpeaking = vm::stopSpeaking,
+                            onReplaySelection = vm::replaySelection,
                         )
                     }
                 }
