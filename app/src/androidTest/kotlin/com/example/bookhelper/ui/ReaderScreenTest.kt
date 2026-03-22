@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -22,6 +23,47 @@ import org.junit.Test
 class ReaderScreenTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun stopButtonAppearsAndInvokesCallbackWhileSpeaking() {
+        var stopCount = 0
+
+        composeRule.setContent {
+            ReaderScreen(
+                uiState = ReaderUiState(
+                    ocrPage = OcrPage.EMPTY,
+                    isSpeaking = true,
+                ),
+                cameraPermissionGranted = true,
+                onFrameOcr = {},
+                onTap = { _, _ -> },
+                onDragSelect = { _, _, _, _ -> },
+                onSaveWord = {},
+                onSetSpeechRate = {},
+                onSetTapSelectionWindowMs = {},
+                onSetDragSelectionMinDistancePx = {},
+                onSetTtsEnginePreference = {},
+                onSetLocalModel = {},
+                onSetLocalSpeaker = {},
+                onSetAutoSpeakEnabled = {},
+                onSetSpeechTarget = {},
+                onCloseSettingsDialog = {},
+                onDismissDictionaryDialog = {},
+                onRevealKoreanDefinition = {},
+                onOpenSavedWordsDialog = {},
+                onDismissSavedWordsDialog = {},
+                onOpenSavedWord = {},
+                onDeleteSavedWord = {},
+                onSpeakWordFromDictionary = {},
+                onStopSpeaking = { stopCount += 1 },
+            )
+        }
+
+        composeRule.onNodeWithContentDescription("읽기 중지").performSemanticsAction(SemanticsActions.OnClick)
+        composeRule.runOnIdle {
+            check(stopCount == 1)
+        }
+    }
 
     @Test
     fun closeButtonDismissesSettingsDialogWhileLocalTtsLoads() {
@@ -63,6 +105,7 @@ class ReaderScreenTest {
                 onOpenSavedWord = {},
                 onDeleteSavedWord = {},
                 onSpeakWordFromDictionary = {},
+                onStopSpeaking = {},
             )
         }
 
@@ -114,6 +157,7 @@ class ReaderScreenTest {
                 onOpenSavedWord = {},
                 onDeleteSavedWord = {},
                 onSpeakWordFromDictionary = {},
+                onStopSpeaking = {},
             )
         }
 
@@ -197,6 +241,7 @@ class ReaderScreenTest {
                 onOpenSavedWord = {},
                 onDeleteSavedWord = {},
                 onSpeakWordFromDictionary = {},
+                onStopSpeaking = {},
             )
         }
 

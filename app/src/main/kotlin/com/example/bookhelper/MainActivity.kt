@@ -80,6 +80,8 @@ class MainActivity : ComponentActivity() {
                             onDismissSavedWordsDialog = vm::dismissSavedWordsDialog,
                             onOpenSavedWord = vm::openSavedWord,
                             onDeleteSavedWord = vm::deleteSavedWord,
+                            onSpeakWordFromDictionary = vm::speakWordFromDictionary,
+                            onStopSpeaking = vm::stopSpeaking,
                         )
                     }
                 }

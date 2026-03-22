@@ -6,7 +6,6 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.bookhelper.contracts.OcrLine
 import com.example.bookhelper.contracts.OcrPage
 import com.example.bookhelper.contracts.OcrWord
 import com.example.bookhelper.data.local.DictionaryDatabase
@@ -21,7 +20,6 @@ import com.example.bookhelper.ocr.OcrFrameResult
 import com.example.bookhelper.provisioning.ProvisioningReadiness
 import com.example.bookhelper.startup.ReaderStartupPayload
 import com.example.bookhelper.text.SelectionResolver
-import com.example.bookhelper.text.SentenceSegmenter
 import com.example.bookhelper.text.TimedTapSelectionEngine
 import com.example.bookhelper.text.TextPostProcessor
 import com.example.bookhelper.text.WordHit
@@ -55,7 +53,6 @@ class ReaderViewModel(
     private val lemmatizer = Lemmatizer()
     private val postProcessor = TextPostProcessor()
     private val selectionResolver = SelectionResolver()
-    private val sentenceSegmenter = SentenceSegmenter()
     private val timedTapSelectionEngine = TimedTapSelectionEngine()
     private val bundledModelInstaller = BundledTtsModelInstaller(appContext)
     private val ttsManager = requireNotNull(startupPayload.ttsManagerHolder.manager)
@@ -69,6 +66,8 @@ class ReaderViewModel(
     private var dictionaryRuntime: DictionaryRuntime? = startupPayload.dictionaryLookupServiceHolder.lookupService?.let { DictionaryRuntime(it) }
     private var pendingDictionaryLookupJob: Job? = null
     private var pendingTapDictionaryLookupJob: Job? = null
+    private var speakingResetJob: Job? = null
+    private var speakingToken: Long = 0L
 
     private val _uiState = MutableStateFlow(startupPayload.initialUiState)
     val uiState: ReaderUiState
@@ -154,7 +153,7 @@ class ReaderViewModel(
                 return
             }
 
-            val sentence = resolveSentenceAt(y, page)
+            val sentence = readableLineText(hit.line)
             scheduleTapDictionaryLookup(word = hit.word, sentence = sentence)
             return
         }
@@ -168,7 +167,7 @@ class ReaderViewModel(
             return
         }
 
-        val sentence = resolveSentenceAt(y, page)
+        val sentence = resolveReadableLineAt(y, page)
         scheduleTapDictionaryLookup(word = word, sentence = sentence)
     }
 
@@ -250,6 +249,11 @@ class ReaderViewModel(
     private fun cancelPendingTapDictionaryLookup() {
         pendingTapDictionaryLookupJob?.cancel()
         pendingTapDictionaryLookupJob = null
+    }
+
+    private fun cancelSpeakingReset() {
+        speakingResetJob?.cancel()
+        speakingResetJob = null
     }
 
     private fun maybeAutoSpeak(word: OcrWord, sentence: String?) {
@@ -551,6 +555,7 @@ class ReaderViewModel(
 
     fun speakWordFromDictionary() {
         val word = _uiState.value.selectedWord?.text ?: return
+        markSpeaking(word)
         ttsManager.speakSystemOnly(
             text = word,
             utteranceId = "dictionary-speak",
@@ -604,19 +609,40 @@ class ReaderViewModel(
         cancelPendingDictionaryLookup()
         cancelPendingTapDictionaryLookup()
         timedTapSelectionEngine.reset()
+        val state = _uiState.value
         val words = selectionResolver.resolveWordsInRegion(
             startX = startX,
             startY = startY,
             endX = endX,
             endY = endY,
-            page = _uiState.value.ocrPage,
-            minDragDistance = _uiState.value.dragSelectionMinDistancePx,
+            page = state.ocrPage,
+            minDragDistance = state.dragSelectionMinDistancePx,
         )
         if (words.isEmpty()) {
             return
         }
 
-        val text = wordsToReadableText(words)
+        val selectedWords: List<OcrWord>
+        val text: String
+        if (state.speechTarget == SpeechTarget.SENTENCE) {
+            val lines = selectionResolver.resolveLinesInRegion(
+                startX = startX,
+                startY = startY,
+                endX = endX,
+                endY = endY,
+                page = state.ocrPage,
+                minDragDistance = state.dragSelectionMinDistancePx,
+            )
+            selectedWords = lines.flatMap { it.words }.ifEmpty { words }
+            text = lines
+                .map(::readableLineText)
+                .filter { it.isNotBlank() }
+                .joinToString(" ")
+                .ifBlank { wordsToReadableText(words) }
+        } else {
+            selectedWords = words
+            text = wordsToReadableText(words)
+        }
         if (text.isBlank()) {
             return
         }
@@ -624,11 +650,22 @@ class ReaderViewModel(
         speakWithCurrentTts(text, utteranceId = "drag-selection")
         _uiState.update {
             it.copy(
-                selectedWord = words.first(),
-                selectedWords = words,
+                selectedWord = selectedWords.first(),
+                selectedWords = selectedWords,
                 selectedSentence = text,
                 isDictionaryDialogVisible = false,
-                message = "드래그 구간 읽기",
+                message = if (state.speechTarget == SpeechTarget.SENTENCE) "드래그 줄 읽기" else "드래그 구간 읽기",
+            )
+        }
+    }
+
+    fun stopSpeaking() {
+        ttsManager.stop()
+        cancelSpeakingReset()
+        _uiState.update {
+            it.copy(
+                isSpeaking = false,
+                message = "읽기 중지",
             )
         }
     }
@@ -655,6 +692,7 @@ class ReaderViewModel(
     }
 
     private fun speakWithCurrentTts(text: String, utteranceId: String) {
+        markSpeaking(text)
         ttsManager.speak(
             text = text,
             utteranceId = utteranceId,
@@ -679,6 +717,7 @@ class ReaderViewModel(
                 localRuntimeReady = runtimeStatus.runtimeReady,
                 localRuntimeChecking = runtimeStatus.runtimeChecking,
                 localRuntimeLastError = runtimeStatus.lastFailureReason,
+                isSpeaking = if (result.accepted) it.isSpeaking else false,
                 message = if (result.accepted) {
                     "TTS 재생: $routeText"
                 } else {
@@ -686,23 +725,48 @@ class ReaderViewModel(
                 },
             )
         }
+        if (!result.accepted) {
+            cancelSpeakingReset()
+        }
     }
 
-    private fun resolveSentenceAt(y: Float, page: OcrPage): String? {
-        val nearestLine = page.blocks
+    private fun readableLineText(hitLine: com.example.bookhelper.contracts.OcrLine): String {
+        return wordsToReadableText(hitLine.words)
+            .ifBlank { hitLine.text.trim() }
+    }
+
+    private fun resolveReadableLineAt(y: Float, page: OcrPage): String? {
+        return page.blocks
             .flatMap { it.lines }
-            .minByOrNull { lineDistance(it, y) }
-            ?: return null
-
-        return sentenceSegmenter
-            .split(nearestLine.text)
-            .firstOrNull()
+            .minByOrNull { line ->
+                val box = line.boundingBox ?: return@minByOrNull Float.MAX_VALUE
+                val center = (box.top + box.bottom) / 2f
+                kotlin.math.abs(center - y)
+            }
+            ?.let(::readableLineText)
+            ?.takeIf { it.isNotBlank() }
     }
 
-    private fun lineDistance(line: OcrLine, y: Float): Float {
-        val box = line.boundingBox ?: return Float.MAX_VALUE
-        val center = (box.top + box.bottom) / 2f
-        return kotlin.math.abs(center - y)
+    private fun markSpeaking(text: String) {
+        speakingToken += 1L
+        val token = speakingToken
+        cancelSpeakingReset()
+        _uiState.update { it.copy(isSpeaking = true) }
+        speakingResetJob = viewModelScope.launch {
+            delay(estimateSpeechDurationMs(text = text, speechRate = _uiState.value.speechRate))
+            if (token == speakingToken) {
+                _uiState.update { it.copy(isSpeaking = false) }
+            }
+        }
+    }
+
+    private fun estimateSpeechDurationMs(text: String, speechRate: Float): Long {
+        val words = Regex("\\S+").findAll(text).count().coerceAtLeast(1)
+        val baseDurationMs = words * 450L
+        val normalizedRate = speechRate.coerceAtLeast(0.85f)
+        return (baseDurationMs / normalizedRate)
+            .toLong()
+            .coerceIn(1_200L, 20_000L)
     }
 
     private fun resolveLocalModel(modelId: String?): BundledTtsModel {
@@ -773,6 +837,7 @@ class ReaderViewModel(
     override fun onCleared() {
         cancelPendingDictionaryLookup()
         cancelPendingTapDictionaryLookup()
+        cancelSpeakingReset()
         ttsManager.stop()
         super.onCleared()
     }

@@ -38,6 +38,7 @@ data class ReaderUiState(
     val isKoreanDefinitionVisible: Boolean = false,
     val isDictionaryReady: Boolean = false,
     val isAnalyzing: Boolean = false,
+    val isSpeaking: Boolean = false,
     val message: String? = null,
     val speechRate: Float = 1.0f,
     val tapSelectionWindowMs: Long = 1200L,

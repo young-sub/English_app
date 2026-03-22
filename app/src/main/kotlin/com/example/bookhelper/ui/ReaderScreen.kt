@@ -16,8 +16,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.togetherWith
@@ -148,6 +147,7 @@ fun ReaderScreen(
     onOpenSavedWord: (SavedWordItem) -> Unit,
     onDeleteSavedWord: (SavedWordItem) -> Unit,
     onSpeakWordFromDictionary: () -> Unit,
+    onStopSpeaking: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -173,14 +173,7 @@ fun ReaderScreen(
 
     val viewportReducer = remember { ViewportTransformReducer(minScale = 1f, maxScale = 4f) }
     var viewportTransform by remember { mutableStateOf(ViewportTransformState.Identity) }
-    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
-        viewportTransform = viewportReducer.applyGesture(
-            current = viewportTransform,
-            zoomChange = zoomChange,
-            panX = panChange.x,
-            panY = panChange.y,
-        )
-    }
+    val isZoomed = viewportTransform.scale > 1.01f
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -413,14 +406,32 @@ fun ReaderScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer {
-                        transformOrigin = TransformOrigin(0f, 0f)
-                        scaleX = viewportTransform.scale
-                        scaleY = viewportTransform.scale
-                        translationX = viewportTransform.offsetX
-                        translationY = viewportTransform.offsetY
-                    }
-                    .transformable(state = transformableState),
+                .graphicsLayer {
+                    transformOrigin = TransformOrigin(0f, 0f)
+                    scaleX = viewportTransform.scale
+                    scaleY = viewportTransform.scale
+                    translationX = viewportTransform.offsetX
+                    translationY = viewportTransform.offsetY
+                }
+                    .pointerInput(viewportReducer) {
+                        detectTransformGestures(
+                            panZoomLock = true,
+                        ) { centroid, pan, zoom, _ ->
+                            val nextTransform = viewportReducer.applyGesture(
+                                current = latestViewportTransform,
+                                zoomChange = zoom,
+                                panX = pan.x,
+                                panY = pan.y,
+                                focalX = centroid.x,
+                                focalY = centroid.y,
+                            )
+                            viewportTransform = nextTransform
+                            if (nextTransform.scale > 1.01f || abs(pan.x) > 0.5f || abs(pan.y) > 0.5f) {
+                                dragStart = null
+                                dragCurrent = null
+                            }
+                        }
+                    },
             ) {
                 if (cameraPermissionGranted) {
                     AndroidView(
@@ -456,60 +467,66 @@ fun ReaderScreen(
                 Canvas(
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(latestSourceWidth, latestSourceHeight, latestViewportTransform) {
-                            detectDragGestures(
-                                onDragStart = { start ->
-                                    dragStart = start
-                                    dragCurrent = start
-                                },
-                                onDragCancel = {
-                                    dragStart = null
-                                    dragCurrent = null
-                                },
-                                onDragEnd = {
-                                    val start = dragStart
-                                    val end = dragCurrent
-                                    if (start != null && end != null) {
-                                        val sourceStart = mapTransformedViewToSource(
-                                            x = start.x,
-                                            y = start.y,
-                                            viewWidth = size.width.toFloat(),
-                                            viewHeight = size.height.toFloat(),
-                                            sourceWidth = latestSourceWidth,
-                                            sourceHeight = latestSourceHeight,
-                                            transform = latestViewportTransform,
-                                        )
-                                        val sourceEnd = mapTransformedViewToSource(
-                                            x = end.x,
-                                            y = end.y,
-                                            viewWidth = size.width.toFloat(),
-                                            viewHeight = size.height.toFloat(),
-                                            sourceWidth = latestSourceWidth,
-                                            sourceHeight = latestSourceHeight,
-                                            transform = latestViewportTransform,
-                                        )
-                                        onDragSelectState(
-                                            sourceStart.first,
-                                            sourceStart.second,
-                                            sourceEnd.first,
-                                            sourceEnd.second,
-                                        )
+                        .then(
+                            if (!isZoomed) {
+                                Modifier.pointerInput(latestSourceWidth, latestSourceHeight, latestViewportTransform) {
+                                    detectDragGestures(
+                                        onDragStart = { start ->
+                                            dragStart = start
+                                            dragCurrent = start
+                                        },
+                                        onDragCancel = {
+                                            dragStart = null
+                                            dragCurrent = null
+                                        },
+                                        onDragEnd = {
+                                            val start = dragStart
+                                            val end = dragCurrent
+                                            if (start != null && end != null) {
+                                                val sourceStart = mapTransformedViewToSource(
+                                                    x = start.x,
+                                                    y = start.y,
+                                                    viewWidth = size.width.toFloat(),
+                                                    viewHeight = size.height.toFloat(),
+                                                    sourceWidth = latestSourceWidth,
+                                                    sourceHeight = latestSourceHeight,
+                                                    transform = latestViewportTransform,
+                                                )
+                                                val sourceEnd = mapTransformedViewToSource(
+                                                    x = end.x,
+                                                    y = end.y,
+                                                    viewWidth = size.width.toFloat(),
+                                                    viewHeight = size.height.toFloat(),
+                                                    sourceWidth = latestSourceWidth,
+                                                    sourceHeight = latestSourceHeight,
+                                                    transform = latestViewportTransform,
+                                                )
+                                                onDragSelectState(
+                                                    sourceStart.first,
+                                                    sourceStart.second,
+                                                    sourceEnd.first,
+                                                    sourceEnd.second,
+                                                )
+                                            }
+                                            dragStart = null
+                                            dragCurrent = null
+                                        },
+                                    ) { _, dragAmount ->
+                                        val previous = dragCurrent
+                                        val next = (previous ?: Offset.Zero) + dragAmount
+                                        if (
+                                            previous == null ||
+                                            abs(next.x - previous.x) >= 1f ||
+                                            abs(next.y - previous.y) >= 1f
+                                        ) {
+                                            dragCurrent = next
+                                        }
                                     }
-                                    dragStart = null
-                                    dragCurrent = null
-                                },
-                            ) { _, dragAmount ->
-                                val previous = dragCurrent
-                                val next = (previous ?: Offset.Zero) + dragAmount
-                                if (
-                                    previous == null ||
-                                    abs(next.x - previous.x) >= 1f ||
-                                    abs(next.y - previous.y) >= 1f
-                                ) {
-                                    dragCurrent = next
                                 }
+                            } else {
+                                Modifier
                             }
-                        }
+                        )
                         .pointerInput(latestSourceWidth, latestSourceHeight, latestViewportTransform) {
                             detectTapGestures { offset ->
                                 val sourcePoint = mapTransformedViewToSource(
@@ -558,6 +575,8 @@ fun ReaderScreen(
                 onOpenGallery = openGalleryAndAnalyze,
                 onCaptureSnapshot = captureSnapshot,
                 onReturnToLiveMode = returnToLiveMode,
+                isSpeaking = uiState.isSpeaking,
+                onStopSpeaking = onStopSpeaking,
             )
 
             if (isSnapshotProcessing || isGalleryPicking) {
@@ -1151,6 +1170,8 @@ private fun BoxScope.SnapshotSearchControlSubtree(
     onOpenGallery: () -> Unit,
     onCaptureSnapshot: () -> Unit,
     onReturnToLiveMode: () -> Unit,
+    isSpeaking: Boolean,
+    onStopSpeaking: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -1177,6 +1198,31 @@ private fun BoxScope.SnapshotSearchControlSubtree(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (isSpeaking) {
+                Box(
+                    modifier = Modifier
+                        .size(60.dp)
+                        .background(Color(0xDCEE4444), CircleShape)
+                        .border(width = 2.dp, color = Color(0xFFFFE2E2), shape = CircleShape)
+                        .clickable(
+                            enabled = !isSnapshotProcessing && !isGalleryPicking,
+                            role = Role.Button,
+                            onClick = onStopSpeaking,
+                        )
+                        .semantics { contentDescription = "읽기 중지" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(modifier = Modifier.size(22.dp)) {
+                        drawRoundRect(
+                            color = Color.White,
+                            topLeft = Offset(size.width * 0.2f, size.height * 0.2f),
+                            size = androidx.compose.ui.geometry.Size(size.width * 0.6f, size.height * 0.6f),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f),
+                        )
+                    }
+                }
+            }
+
             if (cameraPermissionGranted) {
                 Box(
                     modifier = Modifier
@@ -1290,6 +1336,31 @@ private fun BoxScope.SnapshotSearchControlSubtree(
                         end = Offset(size.width * 0.8f, size.height * 0.42f),
                         strokeWidth = stroke,
                     )
+                }
+            }
+
+            if (isSpeaking) {
+                Box(
+                    modifier = Modifier
+                        .size(60.dp)
+                        .background(Color(0xDCEE4444), CircleShape)
+                        .border(width = 2.dp, color = Color(0xFFFFE2E2), shape = CircleShape)
+                        .clickable(
+                            enabled = !isSnapshotProcessing && !isGalleryPicking,
+                            role = Role.Button,
+                            onClick = onStopSpeaking,
+                        )
+                        .semantics { contentDescription = "읽기 중지" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(modifier = Modifier.size(22.dp)) {
+                        drawRoundRect(
+                            color = Color.White,
+                            topLeft = Offset(size.width * 0.2f, size.height * 0.2f),
+                            size = androidx.compose.ui.geometry.Size(size.width * 0.6f, size.height * 0.6f),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f),
+                        )
+                    }
                 }
             }
 
