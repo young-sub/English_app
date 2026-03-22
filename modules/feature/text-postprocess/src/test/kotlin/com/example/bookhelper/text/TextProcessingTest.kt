@@ -171,6 +171,47 @@ class TextProcessingTest {
     }
 
     @Test
+    fun selectionResolverReturnsTouchedLinesInDragRegion() {
+        val resolver = SelectionResolver()
+        val page = OcrPage(
+            blocks = listOf(
+                OcrBlock(
+                    lines = listOf(
+                        OcrLine(
+                            words = listOf(
+                                OcrWord("read", BoundingBox(10, 10, 70, 40)),
+                                OcrWord("this", BoundingBox(80, 10, 150, 40)),
+                            ),
+                            text = "read this",
+                            boundingBox = BoundingBox(10, 10, 150, 40),
+                        ),
+                        OcrLine(
+                            words = listOf(
+                                OcrWord("next", BoundingBox(10, 60, 70, 90)),
+                                OcrWord("line", BoundingBox(80, 60, 140, 90)),
+                            ),
+                            text = "next line",
+                            boundingBox = BoundingBox(10, 60, 140, 90),
+                        ),
+                    ),
+                    boundingBox = BoundingBox(10, 10, 150, 90),
+                ),
+            ),
+            fullText = "read this\nnext line",
+        )
+
+        val lines = resolver.resolveLinesInRegion(
+            startX = 5f,
+            startY = 5f,
+            endX = 90f,
+            endY = 95f,
+            page = page,
+        )
+
+        assertEquals(listOf("read this", "next line"), lines.map { it.text })
+    }
+
+    @Test
     fun timedTapSelectionEngineBuildsRangeTextWithinWindow() {
         val line = OcrLine(
             words = listOf(

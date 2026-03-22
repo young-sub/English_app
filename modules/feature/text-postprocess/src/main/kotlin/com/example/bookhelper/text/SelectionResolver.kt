@@ -109,6 +109,45 @@ class SelectionResolver {
             }
     }
 
+    fun resolveLinesInRegion(
+        startX: Float,
+        startY: Float,
+        endX: Float,
+        endY: Float,
+        page: OcrPage,
+        minDragDistance: Float = 4f,
+    ): List<OcrLine> {
+        val left = minOf(startX, endX)
+        val right = maxOf(startX, endX)
+        val top = minOf(startY, endY)
+        val bottom = maxOf(startY, endY)
+        if ((right - left) < minDragDistance && (bottom - top) < minDragDistance) {
+            return emptyList()
+        }
+
+        return page.blocks
+            .flatMap { it.lines }
+            .filter { line ->
+                val lineBox = line.boundingBox
+                if (lineBox != null) {
+                    boxesIntersect(
+                        left = left,
+                        right = right,
+                        top = top,
+                        bottom = bottom,
+                        line = lineBox,
+                    )
+                } else {
+                    line.words.any { word ->
+                        val box = word.boundingBox ?: return@any false
+                        val centerX = (box.left + box.right) / 2f
+                        val centerY = (box.top + box.bottom) / 2f
+                        centerX in left..right && centerY in top..bottom
+                    }
+                }
+            }
+    }
+
     fun resolveWordsBetweenHits(
         firstHit: WordHit,
         secondHit: WordHit,
@@ -190,6 +229,19 @@ class SelectionResolver {
             else -> 0f
         }
         return hypot(dx, dy)
+    }
+
+    private fun boxesIntersect(
+        left: Float,
+        right: Float,
+        top: Float,
+        bottom: Float,
+        line: com.example.bookhelper.contracts.BoundingBox,
+    ): Boolean {
+        return line.left.toFloat() <= right &&
+            line.right.toFloat() >= left &&
+            line.top.toFloat() <= bottom &&
+            line.bottom.toFloat() >= top
     }
 
     private fun sameWord(a: OcrWord, b: OcrWord): Boolean {
