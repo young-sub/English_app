@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TTS Preset Lab</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Developer-only voice audition tool</p>
+          <h1>TTS Preset Lab</h1>
+          <p class="hero-copy">겹치지 않는 10개 배치를 계속 생성하면서 빠르게 듣고, 마음에 드는 화자는 오디오까지 포함해 즐겨찾기로 저장하는 테스트 페이지입니다.</p>
+        </div>
+        <div class="hero-meta">
+          <div class="meta-card">
+            <span class="meta-label">GPU</span>
+            <strong id="gpu-name">확인 중</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">기본 provider</span>
+            <strong id="default-provider">-</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">CUDA wheel</span>
+            <strong id="cuda-wheel-status">확인 중</strong>
+          </div>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel panel-control">
+          <div class="panel-header">
+            <h2>1. 모델 선택</h2>
+            <p>현재 앱 기준 모델만 빠르게 비교합니다.</p>
+          </div>
+          <div id="model-grid" class="model-grid"></div>
+
+          <div class="panel-header section-gap">
+            <h2>2. 예시 문장 / 실행 설정</h2>
+            <p>긴 인용문 컬렉션을 준비했습니다. 생성 전에 문장을 고르거나 직접 수정할 수 있습니다.</p>
+          </div>
+
+          <div class="controls-row stack-mobile">
+            <div class="control-block grow">
+              <label for="prompt-select">예시 문장 선택</label>
+              <select id="prompt-select" class="select-input"></select>
+            </div>
+            <div class="control-block grow">
+              <label for="speed-range">속도 <span id="speed-value">1.00x</span></label>
+              <input id="speed-range" type="range" min="0.7" max="1.4" step="0.05" value="1.0" />
+            </div>
+          </div>
+
+          <textarea id="text-input" class="text-input" rows="6"></textarea>
+
+          <div class="controls-row stack-mobile">
+            <div class="control-block grow">
+              <label>provider</label>
+              <div id="provider-row" class="segmented"></div>
+            </div>
+            <label class="toggle-card">
+              <input id="autoplay-toggle" type="checkbox" checked />
+              <span>배치 생성 후 연속 재생</span>
+            </label>
+            <label class="toggle-card">
+              <input id="auto-rotate-prompt-toggle" type="checkbox" />
+              <span>생성 때마다 예시 문장 자동 변경</span>
+            </label>
+          </div>
+        </section>
+
+        <section class="panel panel-batch">
+          <div class="panel-header">
+            <h2>3. 배치 탐색</h2>
+            <p id="progress-summary">확인 중...</p>
+          </div>
+          <div class="preview-card">
+            <span class="meta-label">다음 10개 후보</span>
+            <p id="next-batch-preview">계산 중...</p>
+          </div>
+          <div class="action-grid action-grid-compact">
+            <button id="generate-batch-button" class="primary-btn">새 10개 생성</button>
+            <button id="replay-batch-button" class="secondary-btn">현재 배치 다시 재생</button>
+            <button id="reset-seen-button" class="ghost-btn">생성 기록 초기화</button>
+          </div>
+          <div id="status-line" class="status-line">준비 중...</div>
+        </section>
+
+        <section class="panel panel-favorites">
+          <div class="panel-header">
+            <h2>4. 즐겨찾기</h2>
+            <p>좋은 화자는 오디오와 함께 저장됩니다.</p>
+          </div>
+          <div class="action-grid action-grid-compact">
+            <button id="play-favorites-button" class="secondary-btn">즐겨찾기만 연속 재생</button>
+          </div>
+          <p id="favorites-empty" class="empty-state">아직 저장된 즐겨찾기가 없습니다.</p>
+          <div id="favorites-grid" class="favorites-grid"></div>
+        </section>
+
+        <section class="panel panel-excluded">
+          <div class="panel-header">
+            <h2>5. 제외 목록</h2>
+            <p>여기에 들어간 화자는 다음 배치에서 다시 생성되지 않습니다.</p>
+          </div>
+          <div class="action-grid action-grid-compact">
+            <button id="clear-excluded-button" class="ghost-btn">제외 목록 비우기</button>
+          </div>
+          <p id="excluded-empty" class="empty-state">아직 제외된 화자가 없습니다.</p>
+          <div id="excluded-grid" class="excluded-grid"></div>
+        </section>
+
+        <section class="panel panel-results">
+          <div class="panel-header">
+            <h2>6. 최근 생성 결과</h2>
+            <p>한 번 생성한 화자는 다시 배치에 포함되지 않습니다. 결과 카드에서 바로 즐겨찾기로 저장할 수 있습니다.</p>
+          </div>
+          <div class="action-grid action-grid-compact">
+            <button id="clear-results-button" class="ghost-btn">최근 생성 결과 비우기</button>
+          </div>
+          <div id="results-grid" class="results-grid"></div>
+        </section>
+      </main>
+    </div>
+
+    <template id="result-card-template">
+      <article class="result-card">
+        <div class="result-card-head">
+          <div>
+            <h3 class="result-title"></h3>
+            <p class="result-meta"></p>
+          </div>
+          <div class="result-actions">
+            <button class="favorite-toggle secondary-btn" type="button">즐겨찾기 저장</button>
+            <button class="exclude-toggle ghost-btn" type="button">제외 목록 추가</button>
+            <a class="download-link" download>WAV</a>
+          </div>
+        </div>
+        <audio class="audio-player" controls preload="none"></audio>
+      </article>
+    </template>
+
+    <template id="favorite-card-template">
+      <article class="favorite-card">
+        <div class="result-card-head">
+          <div>
+            <h3 class="favorite-title"></h3>
+            <p class="favorite-meta"></p>
+          </div>
+          <div class="result-actions">
+            <button class="favorite-exclude ghost-btn" type="button">제외 목록 추가</button>
+            <button class="favorite-remove ghost-btn" type="button">삭제</button>
+          </div>
+        </div>
+        <p class="favorite-text"></p>
+        <audio class="favorite-audio" controls preload="none"></audio>
+      </article>
+    </template>
+
+    <template id="excluded-card-template">
+      <article class="excluded-card">
+        <div class="result-card-head">
+          <div>
+            <h3 class="excluded-title"></h3>
+            <p class="excluded-meta"></p>
+          </div>
+          <button class="excluded-remove ghost-btn" type="button">제외 해제</button>
+        </div>
+      </article>
+    </template>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

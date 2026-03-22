@@ -20,8 +20,8 @@ class ReaderSettingsStore(context: Context) {
 
     fun load(): ReaderSettings {
         val speechTarget = runCatching {
-            SpeechTarget.valueOf(prefs.getString(KEY_SPEECH_TARGET, SpeechTarget.WORD.name).orEmpty())
-        }.getOrElse { SpeechTarget.WORD }
+            SpeechTarget.valueOf(prefs.getString(KEY_SPEECH_TARGET, SpeechTarget.SENTENCE.name).orEmpty())
+        }.getOrElse { SpeechTarget.SENTENCE }
         val storedEnginePreference = TtsEnginePreference.fromStored(prefs.getString(KEY_TTS_ENGINE_PREFERENCE, null))
         val hasStoredEnginePreference = prefs.contains(KEY_TTS_ENGINE_PREFERENCE)
         val legacyLocalModelEnabled = prefs.getBoolean(KEY_LOCAL_MODEL_ENABLED, false)
@@ -40,7 +40,7 @@ class ReaderSettingsStore(context: Context) {
 
         return ReaderSettings(
             speechRate = prefs.getFloat(KEY_SPEECH_RATE, DEFAULT_SPEECH_RATE).coerceIn(MIN_SPEECH_RATE, MAX_SPEECH_RATE),
-            autoSpeakEnabled = prefs.getBoolean(KEY_AUTO_SPEAK_ENABLED, false),
+            autoSpeakEnabled = prefs.getBoolean(KEY_AUTO_SPEAK_ENABLED, true),
             speechTarget = speechTarget,
             tapSelectionWindowMs = prefs.getLong(KEY_TAP_SELECTION_WINDOW_MS, 1200L).coerceIn(300L, 3000L),
             dragSelectionMinDistancePx = prefs.getFloat(KEY_DRAG_SELECTION_MIN_DISTANCE_PX, 24f).coerceIn(4f, 200f),

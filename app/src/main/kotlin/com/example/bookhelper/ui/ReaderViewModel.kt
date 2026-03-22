@@ -369,15 +369,15 @@ class ReaderViewModel(
                     localRuntimeLastError = activation.lastFailureReason,
                     effectiveTtsRoute = activation.effectiveRoute,
                     message = if (activation.runtimeChecking) {
-                        "로컬 모델 변경: ${selectedModel.shortLabel} (런타임 점검 중)"
+                        "음성 모델 변경: ${selectedModel.shortLabel} 점검 중"
                     } else if (activation.effectiveLocalModelEnabled) {
-                        "로컬 모델 변경: ${selectedModel.shortLabel} (온디바이스 음성 활성화)"
+                        "음성 모델 변경: ${selectedModel.shortLabel} 활성화"
                     } else if (activation.onDeviceRequested && activation.modelReady) {
-                        "${selectedModel.shortLabel} 런타임 점검 실패, 시스템 TTS 사용"
+                        "음성 모델 변경: ${selectedModel.shortLabel} 점검 실패, 시스템 음성 사용"
                     } else if (activation.modelReady) {
-                        "로컬 모델 변경: ${selectedModel.shortLabel} (현재 시스템 TTS)"
+                        "음성 모델 변경: ${selectedModel.shortLabel} 준비됨"
                     } else {
-                        "${selectedModel.shortLabel} 설치/검증 실패, 시스템 TTS 사용"
+                        "음성 모델 변경: ${selectedModel.shortLabel} 준비 실패, 시스템 음성 사용"
                     },
                 )
             }
@@ -546,6 +546,17 @@ class ReaderViewModel(
 
     fun revealKoreanDefinition() {
         _uiState.update { it.copy(isKoreanDefinitionVisible = true) }
+    }
+
+    fun speakWordFromDictionary() {
+        val word = _uiState.value.selectedWord?.text ?: return
+        ttsManager.speakSystemOnly(
+            text = word,
+            utteranceId = "dictionary-speak",
+            onResult = { result ->
+                applySpeakResult(result)
+            },
+        )
     }
 
     fun saveSelectedWord() {

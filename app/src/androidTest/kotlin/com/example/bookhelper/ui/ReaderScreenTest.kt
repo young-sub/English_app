@@ -7,10 +7,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
 import com.example.bookhelper.contracts.OcrPage
+import com.example.bookhelper.tts.BundledTtsModels
 import com.example.bookhelper.tts.TtsEnginePreference
+import com.example.bookhelper.tts.defaultSpeakerId
 import org.junit.Rule
 import org.junit.Test
 
@@ -57,17 +60,64 @@ class ReaderScreenTest {
                 onDismissSavedWordsDialog = {},
                 onOpenSavedWord = {},
                 onDeleteSavedWord = {},
+                onSpeakWordFromDictionary = {},
             )
         }
 
         composeRule.onNodeWithText("설정").performSemanticsAction(SemanticsActions.OnClick)
-        composeRule.onNodeWithText("온디바이스").assertExists()
-        composeRule.onNodeWithText("온디바이스").performSemanticsAction(SemanticsActions.OnClick)
+        composeRule.onNodeWithText("음성 모델").performSemanticsAction(SemanticsActions.OnClick)
         composeRule.onNodeWithText("닫기").performSemanticsAction(SemanticsActions.OnClick)
-        composeRule.onNodeWithText("현재 모델:").assertDoesNotExist()
+        check(composeRule.onAllNodesWithText("현재 모델:").fetchSemanticsNodes().isEmpty())
         composeRule.runOnIdle {
             check(settingsClosed == 1)
             check(selectedPreference == TtsEnginePreference.ON_DEVICE)
         }
+    }
+
+    @Test
+    fun lessacModelShowsFixedSingleSpeakerLabel() {
+        composeRule.setContent {
+            ReaderScreen(
+                uiState = ReaderUiState(
+                    ocrPage = OcrPage.EMPTY,
+                    ttsEnginePreference = TtsEnginePreference.ON_DEVICE,
+                    availableLocalModels = BundledTtsModels.All,
+                    selectedLocalModelId = BundledTtsModels.PiperEnUsLessacLow.id,
+                    availableSpeakers = BundledTtsModels.PiperEnUsLessacLow.speakers,
+                    selectedSpeakerId = BundledTtsModels.PiperEnUsLessacLow.defaultSpeakerId,
+                    bundledModelName = BundledTtsModels.PiperEnUsLessacLow.displayName,
+                    bundledModelReady = true,
+                    localRuntimeReady = true,
+                    effectiveLocalModelEnabled = true,
+                    message = "음성 모델 변경: 단일 모델 활성화",
+                ),
+                cameraPermissionGranted = false,
+                onFrameOcr = {},
+                onTap = { _, _ -> },
+                onDragSelect = { _, _, _, _ -> },
+                onSaveWord = {},
+                onSetSpeechRate = {},
+                onSetTapSelectionWindowMs = {},
+                onSetDragSelectionMinDistancePx = {},
+                onSetTtsEnginePreference = {},
+                onSetLocalModel = {},
+                onSetLocalSpeaker = {},
+                onSetAutoSpeakEnabled = {},
+                onSetSpeechTarget = {},
+                onCloseSettingsDialog = {},
+                onDismissDictionaryDialog = {},
+                onRevealKoreanDefinition = {},
+                onOpenSavedWordsDialog = {},
+                onDismissSavedWordsDialog = {},
+                onOpenSavedWord = {},
+                onDeleteSavedWord = {},
+                onSpeakWordFromDictionary = {},
+            )
+        }
+
+        composeRule.onNodeWithText("설정").performSemanticsAction(SemanticsActions.OnClick)
+        check(composeRule.onAllNodesWithText("단일 모델").fetchSemanticsNodes().isNotEmpty())
+        check(composeRule.onAllNodesWithText("미국 여성").fetchSemanticsNodes().isNotEmpty())
+        check(composeRule.onAllNodesWithText("[단일 모델] 미국/여성").fetchSemanticsNodes().isNotEmpty())
     }
 }

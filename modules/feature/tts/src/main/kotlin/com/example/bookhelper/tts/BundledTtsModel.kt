@@ -28,7 +28,7 @@ val BundledTtsModel.defaultSpeakerId: Int
     get() = speakers.firstOrNull()?.id ?: 0
 
 val BundledTtsModel.supportsSpeakerSelection: Boolean
-    get() = speakers.size > 1 || modelKind == LocalTtsModelKind.PIPER_DERIVED
+    get() = speakers.size > 1
 
 fun BundledTtsModel.normalizeSpeakerId(candidate: Int?): Int {
     if (modelKind == LocalTtsModelKind.PIPER_DERIVED) {
@@ -75,8 +75,8 @@ object BundledTtsModels {
 
     val PiperEnUsLibriTtsRMedium = BundledTtsModel(
         id = "piper-en_us-libritts_r-medium",
-        displayName = "Piper EN LibriTTS-R Medium",
-        shortLabel = "Piper LibriTTS-R",
+        displayName = "화자 선택",
+        shortLabel = "다화자 모델",
         assetDirectory = "$AssetRoot/piper-en_US-libritts_r-medium",
         speakers = buildPiperPresetSpeakers(),
         modelKind = LocalTtsModelKind.PIPER_DERIVED,
@@ -85,11 +85,11 @@ object BundledTtsModels {
 
     val PiperEnUsLessacLow = BundledTtsModel(
         id = "piper-en_us-lessac-low",
-        displayName = "Piper EN Lessac Low",
-        shortLabel = "Piper Lessac",
+        displayName = "미국 여성",
+        shortLabel = "단일 모델",
         assetDirectory = "$AssetRoot/piper-en_US-lessac-low",
         speakers = listOf(
-            LocalSpeakerProfile(0, "speaker_0", "Speaker 0", SpeakerGender.UNKNOWN, "General"),
+            LocalSpeakerProfile(0, "speaker_0", "미국 · 여성", SpeakerGender.FEMALE, "미국"),
         ),
         modelKind = LocalTtsModelKind.PIPER_DERIVED,
         modelFormat = LocalTtsModelFormat.PIPER_ONNX,
@@ -116,9 +116,9 @@ object BundledTtsModels {
                     LocalSpeakerProfile(
                         id = index,
                         code = "speaker_$index",
-                        displayLabel = "Speaker $index",
+                        displayLabel = "프리셋 ${index + 1}",
                         gender = SpeakerGender.UNKNOWN,
-                        accentLabel = "Preset ${index / 5 + 1}",
+                        accentLabel = "선택 후보",
                     ),
                 )
             }
