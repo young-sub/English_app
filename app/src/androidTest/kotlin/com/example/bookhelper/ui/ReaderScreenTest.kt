@@ -56,12 +56,55 @@ class ReaderScreenTest {
                 onDeleteSavedWord = {},
                 onSpeakWordFromDictionary = {},
                 onStopSpeaking = { stopCount += 1 },
+                onReplaySelection = {},
             )
         }
 
         composeRule.onNodeWithContentDescription("읽기 중지").performSemanticsAction(SemanticsActions.OnClick)
         composeRule.runOnIdle {
             check(stopCount == 1)
+        }
+    }
+
+    @Test
+    fun replayButtonAppearsAndInvokesCallbackWhenSelectionExists() {
+        var replayCount = 0
+
+        composeRule.setContent {
+            ReaderScreen(
+                uiState = ReaderUiState(
+                    ocrPage = OcrPage.EMPTY,
+                    selectedSentence = "read this line",
+                ),
+                cameraPermissionGranted = true,
+                onFrameOcr = {},
+                onTap = { _, _ -> },
+                onDragSelect = { _, _, _, _ -> },
+                onSaveWord = {},
+                onSetSpeechRate = {},
+                onSetTapSelectionWindowMs = {},
+                onSetDragSelectionMinDistancePx = {},
+                onSetTtsEnginePreference = {},
+                onSetLocalModel = {},
+                onSetLocalSpeaker = {},
+                onSetAutoSpeakEnabled = {},
+                onSetSpeechTarget = {},
+                onCloseSettingsDialog = {},
+                onDismissDictionaryDialog = {},
+                onRevealKoreanDefinition = {},
+                onOpenSavedWordsDialog = {},
+                onDismissSavedWordsDialog = {},
+                onOpenSavedWord = {},
+                onDeleteSavedWord = {},
+                onSpeakWordFromDictionary = {},
+                onStopSpeaking = {},
+                onReplaySelection = { replayCount += 1 },
+            )
+        }
+
+        composeRule.onNodeWithContentDescription("선택 영역 다시 읽기").performSemanticsAction(SemanticsActions.OnClick)
+        composeRule.runOnIdle {
+            check(replayCount == 1)
         }
     }
 
@@ -106,6 +149,7 @@ class ReaderScreenTest {
                 onDeleteSavedWord = {},
                 onSpeakWordFromDictionary = {},
                 onStopSpeaking = {},
+                onReplaySelection = {},
             )
         }
 
@@ -158,6 +202,7 @@ class ReaderScreenTest {
                 onDeleteSavedWord = {},
                 onSpeakWordFromDictionary = {},
                 onStopSpeaking = {},
+                onReplaySelection = {},
             )
         }
 
@@ -242,6 +287,7 @@ class ReaderScreenTest {
                 onDeleteSavedWord = {},
                 onSpeakWordFromDictionary = {},
                 onStopSpeaking = {},
+                onReplaySelection = {},
             )
         }
 

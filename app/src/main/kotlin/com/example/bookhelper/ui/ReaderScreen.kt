@@ -149,6 +149,7 @@ fun ReaderScreen(
     onDeleteSavedWord: (SavedWordItem) -> Unit,
     onSpeakWordFromDictionary: () -> Unit,
     onStopSpeaking: () -> Unit,
+    onReplaySelection: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -586,8 +587,10 @@ fun ReaderScreen(
                 onOpenGallery = openGalleryAndAnalyze,
                 onCaptureSnapshot = captureSnapshot,
                 onReturnToLiveMode = returnToLiveMode,
+                canReplaySelection = !uiState.selectedSentence.isNullOrBlank() || uiState.selectedWord != null,
                 isSpeaking = uiState.isSpeaking,
                 onStopSpeaking = onStopSpeaking,
+                onReplaySelection = onReplaySelection,
             )
 
             if (isSnapshotProcessing || isGalleryPicking) {
@@ -1181,8 +1184,10 @@ private fun BoxScope.SnapshotSearchControlSubtree(
     onOpenGallery: () -> Unit,
     onCaptureSnapshot: () -> Unit,
     onReturnToLiveMode: () -> Unit,
+    canReplaySelection: Boolean,
     isSpeaking: Boolean,
     onStopSpeaking: () -> Unit,
+    onReplaySelection: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -1234,6 +1239,32 @@ private fun BoxScope.SnapshotSearchControlSubtree(
                 }
             }
 
+            if (canReplaySelection) {
+                Box(
+                    modifier = Modifier
+                        .size(60.dp)
+                        .background(Color(0xDD2563EB), CircleShape)
+                        .border(width = 2.dp, color = Color(0xFFDBEAFE), shape = CircleShape)
+                        .clickable(
+                            enabled = !isSnapshotProcessing && !isGalleryPicking,
+                            role = Role.Button,
+                            onClick = onReplaySelection,
+                        )
+                        .semantics { contentDescription = "선택 영역 다시 읽기" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(modifier = Modifier.size(24.dp)) {
+                        val triangle = Path().apply {
+                            moveTo(size.width * 0.25f, size.height * 0.15f)
+                            lineTo(size.width * 0.78f, size.height * 0.5f)
+                            lineTo(size.width * 0.25f, size.height * 0.85f)
+                            close()
+                        }
+                        drawPath(path = triangle, color = Color.White)
+                    }
+                }
+            }
+
             if (cameraPermissionGranted) {
                 Box(
                     modifier = Modifier
@@ -1258,6 +1289,32 @@ private fun BoxScope.SnapshotSearchControlSubtree(
                             color = Color(0xFF334155),
                             radius = size.minDimension * 0.28f,
                         )
+                    }
+                }
+            }
+
+            if (canReplaySelection) {
+                Box(
+                    modifier = Modifier
+                        .size(60.dp)
+                        .background(Color(0xDD2563EB), CircleShape)
+                        .border(width = 2.dp, color = Color(0xFFDBEAFE), shape = CircleShape)
+                        .clickable(
+                            enabled = !isSnapshotProcessing && !isGalleryPicking,
+                            role = Role.Button,
+                            onClick = onReplaySelection,
+                        )
+                        .semantics { contentDescription = "선택 영역 다시 읽기" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(modifier = Modifier.size(24.dp)) {
+                        val triangle = Path().apply {
+                            moveTo(size.width * 0.25f, size.height * 0.15f)
+                            lineTo(size.width * 0.78f, size.height * 0.5f)
+                            lineTo(size.width * 0.25f, size.height * 0.85f)
+                            close()
+                        }
+                        drawPath(path = triangle, color = Color.White)
                     }
                 }
             }
