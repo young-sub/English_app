@@ -2,19 +2,28 @@ const STORAGE_KEYS = {
   favorites: "tts-preset-lab-favorites-v1",
   seen: "tts-preset-lab-seen-v1",
   excluded: "tts-preset-lab-excluded-v1",
+  finalSelection: "tts-preset-lab-final-selection-v1",
 };
+
+const AUTO_PROMPT_VALUE = "__auto_rotate__";
+const FAVORITES_DB_NAME = "tts-preset-lab-db";
+const FAVORITES_STORE_NAME = "favorites";
 
 const state = {
   config: null,
   selectedModelId: null,
   provider: "auto",
-  favorites: loadJson(STORAGE_KEYS.favorites, []),
+  favorites: [],
   seenByModel: loadJson(STORAGE_KEYS.seen, {}),
   excludedByModel: loadJson(STORAGE_KEYS.excluded, {}),
+  finalSelectionByModel: loadJson(STORAGE_KEYS.finalSelection, {}),
   resultCount: 0,
   currentBatchCards: [],
   autoplayEnabled: true,
   autoRotatePromptEnabled: false,
+  currentPromptIndex: 0,
+  favoriteObjectUrls: [],
+  selectedFavoriteSpeakerId: null,
 };
 
 const elements = {
@@ -32,15 +41,23 @@ const elements = {
   progressSummary: document.getElementById("progress-summary"),
   nextBatchPreview: document.getElementById("next-batch-preview"),
   generateBatchButton: document.getElementById("generate-batch-button"),
+  generateFavoriteBatchButton: document.getElementById("generate-favorite-batch-button"),
+  generateNearbyBatchButton: document.getElementById("generate-nearby-batch-button"),
   replayBatchButton: document.getElementById("replay-batch-button"),
   resetSeenButton: document.getElementById("reset-seen-button"),
   playFavoritesButton: document.getElementById("play-favorites-button"),
   clearExcludedButton: document.getElementById("clear-excluded-button"),
+  saveCurrentBatchButton: document.getElementById("save-current-batch-button"),
   clearResultsButton: document.getElementById("clear-results-button"),
   favoritesGrid: document.getElementById("favorites-grid"),
   favoritesEmpty: document.getElementById("favorites-empty"),
   excludedGrid: document.getElementById("excluded-grid"),
   excludedEmpty: document.getElementById("excluded-empty"),
+  favoriteCountSummary: document.getElementById("favorite-count-summary"),
+  favoriteSpeakerChips: document.getElementById("favorite-speaker-chips"),
+  selectedFavoriteSummary: document.getElementById("selected-favorite-summary"),
+  favoriteNearbyList: document.getElementById("favorite-nearby-list"),
+  finalSelectionSummary: document.getElementById("final-selection-summary"),
   statusLine: document.getElementById("status-line"),
   resultsGrid: document.getElementById("results-grid"),
   resultCardTemplate: document.getElementById("result-card-template"),
@@ -53,10 +70,12 @@ init().catch((error) => {
 });
 
 async function init() {
+  await initializeFavoriteStore();
   const response = await fetch("/api/config");
   state.config = await response.json();
   state.provider = state.config.defaultProvider;
   state.selectedModelId = state.config.models[1]?.id || state.config.models[0].id;
+  state.currentPromptIndex = 0;
   elements.gpuName.textContent = state.config.gpuName || "미감지";
   elements.defaultProvider.textContent = state.config.defaultProvider;
   elements.cudaWheelStatus.textContent = state.config.cudaWheelReady ? "GPU ready" : "CPU fallback";
@@ -67,14 +86,24 @@ async function init() {
   renderBatchState();
   renderFavorites();
   renderExcluded();
+  renderFinalSelectionSummary([]);
+  elements.saveCurrentBatchButton.disabled = state.currentBatchCards.length === 0;
   setStatus("준비 완료. 예시 문장을 고르고 새 10개 생성을 누르면 됩니다.");
 }
 
 function bindEvents() {
   elements.promptSelect.addEventListener("change", () => {
-    const preset = state.config.textPresets.find((item) => item.id === elements.promptSelect.value);
-    if (preset) {
-      elements.textInput.value = preset.text;
+    if (elements.promptSelect.value === AUTO_PROMPT_VALUE) {
+      state.autoRotatePromptEnabled = true;
+      elements.autoRotatePromptToggle.checked = true;
+      applyPromptByIndex(state.currentPromptIndex);
+      return;
+    }
+    state.autoRotatePromptEnabled = false;
+    elements.autoRotatePromptToggle.checked = false;
+    const promptIndex = state.config.textPresets.findIndex((item) => item.id === elements.promptSelect.value);
+    if (promptIndex >= 0) {
+      applyPromptByIndex(promptIndex);
     }
   });
 
@@ -88,10 +117,27 @@ function bindEvents() {
 
   elements.autoRotatePromptToggle.addEventListener("change", () => {
     state.autoRotatePromptEnabled = elements.autoRotatePromptToggle.checked;
+    if (state.autoRotatePromptEnabled) {
+      elements.promptSelect.value = AUTO_PROMPT_VALUE;
+      applyPromptByIndex(state.currentPromptIndex);
+    } else {
+      const activePreset = state.config.textPresets[state.currentPromptIndex];
+      if (activePreset) {
+        elements.promptSelect.value = activePreset.id;
+      }
+    }
   });
 
   elements.generateBatchButton.addEventListener("click", async () => {
     await generateNextBatch();
+  });
+
+  elements.generateFavoriteBatchButton.addEventListener("click", async () => {
+    await generateFavoriteBatch();
+  });
+
+  elements.generateNearbyBatchButton.addEventListener("click", async () => {
+    await generateNearbyBatch();
   });
 
   elements.replayBatchButton.addEventListener("click", async () => {
@@ -120,7 +166,12 @@ function bindEvents() {
     elements.resultsGrid.innerHTML = "";
     state.currentBatchCards = [];
     state.resultCount = 0;
+    elements.saveCurrentBatchButton.disabled = true;
     setStatus("최근 생성 결과를 비웠습니다.");
+  });
+
+  elements.saveCurrentBatchButton.addEventListener("click", async () => {
+    await saveCurrentBatchAudio();
   });
 
   elements.playFavoritesButton.addEventListener("click", async () => {
@@ -152,6 +203,10 @@ function renderModelGrid() {
 
 function renderPromptSelect() {
   elements.promptSelect.innerHTML = "";
+  const autoOption = document.createElement("option");
+  autoOption.value = AUTO_PROMPT_VALUE;
+  autoOption.textContent = "자동 순환 (생성마다 변경)";
+  elements.promptSelect.appendChild(autoOption);
   for (const preset of state.config.textPresets) {
     const option = document.createElement("option");
     option.value = preset.id;
@@ -159,8 +214,10 @@ function renderPromptSelect() {
     elements.promptSelect.appendChild(option);
   }
   const first = state.config.textPresets[0];
-  elements.promptSelect.value = first.id;
-  elements.textInput.value = first.text;
+  if (first) {
+    elements.promptSelect.value = first.id;
+    applyPromptByIndex(0);
+  }
 }
 
 function renderProviderRow() {
@@ -186,6 +243,7 @@ function renderBatchState() {
   elements.nextBatchPreview.textContent = nextBatch.length
     ? nextBatch.map((speakerId) => `speaker ${speakerId}`).join(" · ")
     : "남은 화자가 없습니다.";
+  renderFavoriteInsights();
 }
 
 async function generateNextBatch() {
@@ -226,7 +284,84 @@ async function generateNextBatch() {
   persistJson(STORAGE_KEYS.seen, state.seenByModel);
   renderBatchState();
   elements.generateBatchButton.disabled = false;
+  elements.saveCurrentBatchButton.disabled = false;
   setStatus(`새 10개 생성 완료. 즐겨찾기로 저장하거나 그대로 연속 청취할 수 있습니다.`);
+  await autoplayBatch(state.currentBatchCards);
+}
+
+async function generateFavoriteBatch() {
+  const model = currentModel();
+  const groupedFavorites = groupedFavoriteSpeakers(model.id);
+  if (!groupedFavorites.length) {
+    setStatus("먼저 즐겨찾기에서 번호를 하나 이상 저장해 주세요.", true);
+    return;
+  }
+  if (state.autoRotatePromptEnabled) {
+    rotatePrompt();
+  }
+  const activeText = elements.textInput.value.trim();
+  if (!activeText) {
+    setStatus("텍스트를 입력해 주세요.", true);
+    return;
+  }
+
+  await generateTargetedBatch({
+    speakerIds: groupedFavorites.map((item) => item.speakerId),
+    text: activeText,
+    statusLabel: `즐겨찾기 번호 ${groupedFavorites.length}개`,
+    sourceButton: elements.generateFavoriteBatchButton,
+  });
+}
+
+async function generateNearbyBatch() {
+  const model = currentModel();
+  if (state.selectedFavoriteSpeakerId == null) {
+    setStatus("주변 번호를 생성하려면 먼저 즐겨찾기 번호를 선택해 주세요.", true);
+    return;
+  }
+  if (state.autoRotatePromptEnabled) {
+    rotatePrompt();
+  }
+  const activeText = elements.textInput.value.trim();
+  if (!activeText) {
+    setStatus("텍스트를 입력해 주세요.", true);
+    return;
+  }
+
+  const nearbySpeakerIds = buildNearbySpeakerIds(model.totalSpeakers, state.selectedFavoriteSpeakerId);
+  await generateTargetedBatch({
+    speakerIds: nearbySpeakerIds,
+    text: activeText,
+    statusLabel: `주변 번호 ${nearbySpeakerIds.length}개`,
+    sourceButton: elements.generateNearbyBatchButton,
+  });
+}
+
+async function generateTargetedBatch({ speakerIds, text, statusLabel, sourceButton }) {
+  const model = currentModel();
+  if (!speakerIds.length) {
+    setStatus("생성할 번호가 없습니다.", true);
+    return;
+  }
+
+  sourceButton.disabled = true;
+  state.currentBatchCards = [];
+  clearResultCardsForFavoriteSpeakers(speakerIds);
+  setStatus(`${statusLabel}를 생성합니다...`);
+
+  for (const [index, speakerId] of speakerIds.entries()) {
+    setStatus(`${index + 1}/${speakerIds.length} 생성 중 · speaker ${speakerId}`);
+    const result = await synthesizeSpeaker(model, text, speakerId);
+    if (!result) {
+      sourceButton.disabled = false;
+      return;
+    }
+    state.currentBatchCards.push(appendResultCard(result));
+  }
+
+  sourceButton.disabled = false;
+  elements.saveCurrentBatchButton.disabled = false;
+  setStatus(`${statusLabel} 생성 완료.`);
   await autoplayBatch(state.currentBatchCards);
 }
 
@@ -303,36 +438,43 @@ function appendResultCard(result) {
 async function toggleFavorite(result, button, objectUrl) {
   if (isFavorite(result.favoriteId)) {
     state.favorites = state.favorites.filter((item) => item.favoriteId !== result.favoriteId);
-    persistJson(STORAGE_KEYS.favorites, state.favorites);
+    await deleteFavoriteFromStore(result.favoriteId);
     button.textContent = "즐겨찾기 저장";
     button.classList.remove("saved");
     renderFavorites();
     return;
   }
 
-  const audioDataUrl = await blobToDataUrl(result.blob);
-  state.favorites.unshift({
+  const favorite = {
     favoriteId: result.favoriteId,
     modelId: result.modelId,
     speakerId: result.speakerId,
     title: result.title,
     meta: result.meta,
     text: result.text,
-    audioDataUrl,
-    objectUrl,
+    audioBlob: result.blob,
     createdAt: Date.now(),
-  });
-  persistJson(STORAGE_KEYS.favorites, state.favorites);
+  };
+  try {
+    await saveFavoriteToStore(favorite);
+  } catch (error) {
+    setStatus(`즐겨찾기 저장 실패: ${error.message}`, true);
+    return;
+  }
+  state.favorites.unshift(favorite);
   button.textContent = "저장됨";
   button.classList.add("saved");
   renderFavorites();
+  renderBatchState();
 }
 
 function renderFavorites() {
+  revokeFavoriteObjectUrls();
   elements.favoritesGrid.innerHTML = "";
   const favoritesForModel = state.favorites.filter((item) => item.modelId === currentModel().id);
   elements.favoritesEmpty.classList.toggle("hidden", favoritesForModel.length > 0);
   elements.playFavoritesButton.disabled = favoritesForModel.length === 0;
+  renderFinalSelectionSummary(favoritesForModel);
 
   for (const favorite of favoritesForModel) {
     const fragment = elements.favoriteCardTemplate.content.cloneNode(true);
@@ -340,8 +482,18 @@ function renderFavorites() {
     fragment.querySelector(".favorite-meta").textContent = favorite.meta;
     fragment.querySelector(".favorite-text").textContent = favorite.text;
     const audio = fragment.querySelector(".favorite-audio");
-    audio.src = favorite.audioDataUrl;
+    const audioSource = favorite.audioBlob instanceof Blob ? URL.createObjectURL(favorite.audioBlob) : favorite.audioDataUrl;
+    if (favorite.audioBlob instanceof Blob) {
+      state.favoriteObjectUrls.push(audioSource);
+    }
+    audio.src = audioSource;
     audio.dataset.favoriteId = favorite.favoriteId;
+    const finalButton = fragment.querySelector(".favorite-final-toggle");
+    finalButton.textContent = isFinalSelected(favorite.modelId, favorite.speakerId) ? "최종 선택됨" : "최종 선택";
+    finalButton.classList.toggle("saved", isFinalSelected(favorite.modelId, favorite.speakerId));
+    finalButton.addEventListener("click", () => {
+      toggleFinalSelection(favorite.modelId, favorite.speakerId, favorite.title);
+    });
     const excludeButton = fragment.querySelector(".favorite-exclude");
     excludeButton.textContent = isExcluded(favorite.modelId, favorite.speakerId) ? "제외됨" : "제외 목록 추가";
     excludeButton.classList.toggle("saved", isExcluded(favorite.modelId, favorite.speakerId));
@@ -349,13 +501,23 @@ function renderFavorites() {
       toggleExcluded(favorite.modelId, favorite.speakerId, favorite.title, favorite.meta);
     });
     fragment.querySelector(".favorite-remove").addEventListener("click", () => {
-      state.favorites = state.favorites.filter((item) => item.favoriteId !== favorite.favoriteId);
-      persistJson(STORAGE_KEYS.favorites, state.favorites);
-      updateFavoriteButtons(favorite.favoriteId);
-      renderFavorites();
+      removeFavorite(favorite.favoriteId);
     });
     elements.favoritesGrid.appendChild(fragment);
   }
+}
+
+async function removeFavorite(favoriteId) {
+  const removedFavorite = state.favorites.find((item) => item.favoriteId === favoriteId);
+  state.favorites = state.favorites.filter((item) => item.favoriteId !== favoriteId);
+  await deleteFavoriteFromStore(favoriteId);
+  if (removedFavorite && isFinalSelected(removedFavorite.modelId, removedFavorite.speakerId)) {
+    delete state.finalSelectionByModel[removedFavorite.modelId];
+    persistJson(STORAGE_KEYS.finalSelection, state.finalSelectionByModel);
+  }
+  updateFavoriteButtons(favoriteId);
+  renderFavorites();
+  renderBatchState();
 }
 
 function renderExcluded() {
@@ -417,6 +579,88 @@ function updateFavoriteButtons(favoriteId) {
   });
 }
 
+function renderFavoriteInsights() {
+  const model = currentModel();
+  const groupedFavorites = groupedFavoriteSpeakers(model.id);
+  const totalFavoriteSelections = groupedFavorites.reduce((sum, item) => sum + item.count, 0);
+  elements.favoriteSpeakerChips.innerHTML = "";
+  elements.generateFavoriteBatchButton.disabled = groupedFavorites.length === 0;
+  elements.generateNearbyBatchButton.disabled = groupedFavorites.length === 0;
+
+  if (!groupedFavorites.length) {
+    state.selectedFavoriteSpeakerId = null;
+    elements.favoriteCountSummary.textContent = "저장된 즐겨찾기 번호가 없습니다.";
+    elements.selectedFavoriteSummary.textContent = "선택된 번호 없음";
+    elements.favoriteNearbyList.innerHTML = "";
+    return;
+  }
+
+  const validSelected = groupedFavorites.some((item) => item.speakerId === state.selectedFavoriteSpeakerId);
+  if (!validSelected) {
+    state.selectedFavoriteSpeakerId = groupedFavorites[0].speakerId;
+  }
+
+  elements.favoriteCountSummary.textContent = `번호 ${groupedFavorites.length}개 · 저장 ${totalFavoriteSelections}건`;
+  for (const entry of groupedFavorites) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `mini-chip ${entry.speakerId === state.selectedFavoriteSpeakerId ? "active" : ""}`;
+    button.innerHTML = `<span>#${entry.speakerId}</span><span class="mini-chip-count">x${entry.count}</span>`;
+    button.addEventListener("click", () => {
+      state.selectedFavoriteSpeakerId = entry.speakerId;
+      renderFavoriteInsights();
+    });
+    elements.favoriteSpeakerChips.appendChild(button);
+  }
+
+  renderNearbyFavoriteNumbers(model.totalSpeakers, state.selectedFavoriteSpeakerId);
+}
+
+function renderNearbyFavoriteNumbers(totalSpeakers, centerSpeakerId) {
+  elements.favoriteNearbyList.innerHTML = "";
+  if (centerSpeakerId == null) {
+    elements.selectedFavoriteSummary.textContent = "선택된 번호 없음";
+    return;
+  }
+  const nearbySpeakerIds = buildNearbySpeakerIds(totalSpeakers, centerSpeakerId);
+  const finalSelectedSpeakerId = finalSelectionSpeakerId(currentModel().id);
+  elements.selectedFavoriteSummary.textContent = `선택 #${centerSpeakerId} 주변 번호`;
+  for (const speakerId of nearbySpeakerIds) {
+    const tag = document.createElement("span");
+    tag.className = `mini-chip nearby-chip ${speakerId === centerSpeakerId ? "active" : ""} ${finalSelectedSpeakerId === speakerId ? "saved" : ""}`;
+    tag.textContent = `#${speakerId}`;
+    elements.favoriteNearbyList.appendChild(tag);
+  }
+}
+
+function renderFinalSelectionSummary(favoritesForModel) {
+  const selectedSpeakerId = finalSelectionSpeakerId(currentModel().id);
+  if (selectedSpeakerId == null) {
+    elements.finalSelectionSummary.textContent = "아직 최종 선택이 없습니다.";
+    return;
+  }
+  const favorite = favoritesForModel.find((item) => item.speakerId === selectedSpeakerId);
+  elements.finalSelectionSummary.textContent = favorite
+    ? `${favorite.title} · 최종 선택됨`
+    : `speaker ${selectedSpeakerId} · 최종 선택됨`;
+}
+
+function toggleFinalSelection(modelId, speakerId, title) {
+  if (isFinalSelected(modelId, speakerId)) {
+    delete state.finalSelectionByModel[modelId];
+    persistJson(STORAGE_KEYS.finalSelection, state.finalSelectionByModel);
+    renderFavorites();
+    renderFavoriteInsights();
+    setStatus(`${title} 최종 선택을 해제했습니다.`);
+    return;
+  }
+  state.finalSelectionByModel[modelId] = speakerId;
+  persistJson(STORAGE_KEYS.finalSelection, state.finalSelectionByModel);
+  renderFavorites();
+  renderFavoriteInsights();
+  setStatus(`${title}를 최종 선택으로 지정했습니다.`);
+}
+
 async function autoplayBatch(batchCards) {
   if (!state.autoplayEnabled || !batchCards.length) {
     return;
@@ -469,6 +713,25 @@ function waitForAudioEnd(audio) {
 
 function currentModel() {
   return state.config.models.find((model) => model.id === state.selectedModelId);
+}
+
+function groupedFavoriteSpeakers(modelId) {
+  const counts = new Map();
+  for (const favorite of state.favorites.filter((item) => item.modelId === modelId)) {
+    counts.set(favorite.speakerId, (counts.get(favorite.speakerId) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([speakerId, count]) => ({ speakerId, count }))
+    .sort((left, right) => right.count - left.count || left.speakerId - right.speakerId);
+}
+
+function finalSelectionSpeakerId(modelId) {
+  const value = state.finalSelectionByModel[modelId];
+  return typeof value === "number" ? value : null;
+}
+
+function isFinalSelected(modelId, speakerId) {
+  return finalSelectionSpeakerId(modelId) === speakerId;
 }
 
 function speakerDeckForModel(model) {
@@ -595,6 +858,61 @@ function setStatus(message, isError = false) {
   elements.statusLine.dataset.error = isError ? "true" : "false";
 }
 
+async function saveCurrentBatchAudio() {
+  if (!state.currentBatchCards.length) {
+    setStatus("먼저 생성된 결과가 있어야 저장할 수 있습니다.", true);
+    return;
+  }
+
+  const files = state.currentBatchCards.map((entry, index) => ({
+    name: buildBatchFilename(entry, index),
+    blob: entry.blob,
+  }));
+
+  try {
+    if (typeof window.showDirectoryPicker === "function") {
+      const directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+      for (const file of files) {
+        const fileHandle = await directoryHandle.getFileHandle(file.name, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(file.blob);
+        await writable.close();
+      }
+      setStatus(`이번 생성 오디오 ${files.length}개를 선택한 폴더에 저장했습니다.`);
+      return;
+    }
+
+    for (const file of files) {
+      triggerBlobDownload(file.blob, file.name);
+    }
+    setStatus(`이번 생성 오디오 ${files.length}개를 다운로드했습니다.`);
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      setStatus("저장을 취소했습니다.", true);
+      return;
+    }
+    setStatus(`오디오 저장 실패: ${error.message}`, true);
+  }
+}
+
+function buildBatchFilename(entry, index) {
+  const safeTitle = entry.title
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9_\-\.가-힣]/g, "");
+  return `${String(index + 1).padStart(2, "0")}_${safeTitle}.wav`;
+}
+
+function triggerBlobDownload(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function loadJson(key, fallback) {
   try {
     return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
@@ -608,16 +926,32 @@ function persistJson(key, value) {
 }
 
 function rotatePrompt() {
-  const options = Array.from(elements.promptSelect.options);
-  if (!options.length) {
+  if (!state.config.textPresets.length) {
     return;
   }
-  const currentIndex = options.findIndex((option) => option.value === elements.promptSelect.value);
-  const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % options.length : 0;
-  elements.promptSelect.value = options[nextIndex].value;
-  const preset = state.config.textPresets.find((item) => item.id === elements.promptSelect.value);
-  if (preset) {
-    elements.textInput.value = preset.text;
+  let nextIndex = state.currentPromptIndex;
+  if (state.config.textPresets.length > 1) {
+    while (nextIndex === state.currentPromptIndex) {
+      nextIndex = Math.floor(Math.random() * state.config.textPresets.length);
+    }
+  }
+  applyPromptByIndex(nextIndex);
+  if (state.autoRotatePromptEnabled) {
+    elements.promptSelect.value = AUTO_PROMPT_VALUE;
+  }
+}
+
+function applyPromptByIndex(index) {
+  const presets = state.config.textPresets;
+  if (!presets.length) {
+    return;
+  }
+  const normalizedIndex = ((index % presets.length) + presets.length) % presets.length;
+  const preset = presets[normalizedIndex];
+  state.currentPromptIndex = normalizedIndex;
+  elements.textInput.value = preset.text;
+  if (!state.autoRotatePromptEnabled) {
+    elements.promptSelect.value = preset.id;
   }
 }
 
@@ -628,4 +962,104 @@ function blobToDataUrl(blob) {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(blob);
   });
+}
+
+async function initializeFavoriteStore() {
+  await migrateLegacyFavorites();
+  state.favorites = await loadFavoritesFromStore();
+}
+
+function openFavoritesDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(FAVORITES_DB_NAME, 1);
+    request.addEventListener("upgradeneeded", () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(FAVORITES_STORE_NAME)) {
+        db.createObjectStore(FAVORITES_STORE_NAME, { keyPath: "favoriteId" });
+      }
+    });
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error || new Error("indexedDB open failed")));
+  });
+}
+
+async function loadFavoritesFromStore() {
+  const db = await openFavoritesDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(FAVORITES_STORE_NAME, "readonly");
+    const store = transaction.objectStore(FAVORITES_STORE_NAME);
+    const request = store.getAll();
+    request.addEventListener("success", () => {
+      const favorites = request.result || [];
+      favorites.sort((left, right) => (right.createdAt || 0) - (left.createdAt || 0));
+      resolve(favorites);
+    });
+    request.addEventListener("error", () => reject(request.error || new Error("favorites load failed")));
+  });
+}
+
+async function saveFavoriteToStore(favorite) {
+  const db = await openFavoritesDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(FAVORITES_STORE_NAME, "readwrite");
+    transaction.addEventListener("complete", resolve);
+    transaction.addEventListener("error", () => reject(transaction.error || new Error("favorite save failed")));
+    transaction.objectStore(FAVORITES_STORE_NAME).put(favorite);
+  });
+}
+
+async function deleteFavoriteFromStore(favoriteId) {
+  const db = await openFavoritesDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(FAVORITES_STORE_NAME, "readwrite");
+    transaction.addEventListener("complete", resolve);
+    transaction.addEventListener("error", () => reject(transaction.error || new Error("favorite delete failed")));
+    transaction.objectStore(FAVORITES_STORE_NAME).delete(favoriteId);
+  });
+}
+
+async function migrateLegacyFavorites() {
+  const legacyFavorites = loadJson(STORAGE_KEYS.favorites, []);
+  if (!legacyFavorites.length) {
+    return;
+  }
+  const existingFavorites = await loadFavoritesFromStore().catch(() => []);
+  if (existingFavorites.length) {
+    localStorage.removeItem(STORAGE_KEYS.favorites);
+    return;
+  }
+  for (const favorite of legacyFavorites) {
+    const migrated = { ...favorite };
+    if (!migrated.audioBlob && migrated.audioDataUrl) {
+      migrated.audioBlob = await fetch(migrated.audioDataUrl).then((response) => response.blob());
+    }
+    await saveFavoriteToStore(migrated);
+  }
+  localStorage.removeItem(STORAGE_KEYS.favorites);
+}
+
+function revokeFavoriteObjectUrls() {
+  for (const url of state.favoriteObjectUrls) {
+    URL.revokeObjectURL(url);
+  }
+  state.favoriteObjectUrls = [];
+}
+
+function clearResultCardsForFavoriteSpeakers(speakerIds) {
+  const targetIds = new Set(speakerIds.map((speakerId) => String(speakerId)));
+  document.querySelectorAll("#results-grid .result-card").forEach((card) => {
+    if (targetIds.has(card.dataset.speakerId || "")) {
+      card.remove();
+    }
+  });
+}
+
+function buildNearbySpeakerIds(totalSpeakers, centerSpeakerId) {
+  const start = Math.max(0, centerSpeakerId - 5);
+  const end = Math.min(totalSpeakers - 1, centerSpeakerId + 5);
+  const speakerIds = [];
+  for (let speakerId = start; speakerId <= end; speakerId += 1) {
+    speakerIds.push(speakerId);
+  }
+  return speakerIds;
 }

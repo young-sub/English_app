@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -121,7 +123,7 @@ private val CameraLetterboxColor = Color(0xFF0F1115)
 private val CameraControlStripColor = Color(0xB3293342)
 private const val PreviewVerticalBias = 0f
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ReaderScreen(
     uiState: ReaderUiState,
@@ -607,7 +609,6 @@ fun ReaderScreen(
             properties = DialogProperties(usePlatformDefaultWidth = false),
             title = { Text("설정") },
             text = {
-                val modelPickerScroll = rememberScrollState()
                 val displayedModels = uiState.availableLocalModels.sortedWith(
                     compareByDescending<com.example.bookhelper.tts.BundledTtsModel> { it.id.contains("piper", ignoreCase = true) }
                         .thenBy { it.displayName },
@@ -725,7 +726,10 @@ fun ReaderScreen(
                             val usesOnDeviceVoice = uiState.ttsEnginePreference == TtsEnginePreference.ON_DEVICE
                             val usesSystemVoice = !usesOnDeviceVoice
                             Text("음성 엔진", fontWeight = FontWeight.Bold)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
                                 EngineOptionButton(
                                     label = "시스템 음성",
                                     selected = usesSystemVoice,
@@ -743,7 +747,10 @@ fun ReaderScreen(
                                     Text(if (showAdvancedVoiceOptions) "시스템 엔진 숨기기" else "시스템 엔진 세부 선택")
                                 }
                                 if (showAdvancedVoiceOptions) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
                                         EngineOptionButton(
                                             label = "Google",
                                             selected = uiState.ttsEnginePreference == TtsEnginePreference.GOOGLE,
@@ -765,11 +772,10 @@ fun ReaderScreen(
                                 if (displayedModels.isEmpty()) {
                                     Text("사용 가능한 음성 모델이 없습니다.", color = Color(0xFF64748B))
                                 } else {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .horizontalScroll(modelPickerScroll),
+                                    FlowRow(
+                                        modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp),
                                     ) {
                                         displayedModels.forEach { model ->
                                             VoiceModelCard(
@@ -796,6 +802,12 @@ fun ReaderScreen(
                                             color = Color(0xFF0F172A),
                                             fontWeight = FontWeight.SemiBold,
                                         )
+                                        selectedSpeaker?.description?.takeIf { it.isNotBlank() }?.let { description ->
+                                            Text(
+                                                text = description,
+                                                color = Color(0xFF475569),
+                                            )
+                                        }
                                         Text(
                                             text = if (uiState.bundledModelReady) {
                                                 if (uiState.effectiveLocalModelEnabled) "현재 음성 모델 경로가 활성화되어 있어요."
@@ -822,9 +834,10 @@ fun ReaderScreen(
                                     groupedSpeakers.forEach { (groupLabel, speakers) ->
                                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                             Text(groupLabel, fontWeight = FontWeight.SemiBold, color = Color(0xFF0F172A))
-                                            Row(
-                                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                            FlowRow(
+                                                modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalArrangement = Arrangement.spacedBy(8.dp),
                                             ) {
                                                 speakers.forEach { speaker ->
                                                     SpeakerChip(
@@ -928,20 +941,8 @@ fun ReaderScreen(
     }
 
     if (uiState.isDictionaryDialogVisible && uiState.dictionaryEntries.isNotEmpty()) {
-        val entry = uiState.dictionaryEntries.first()
-        val englishSenses = entry.senses.ifEmpty {
-            listOf(
-                DictionarySense(
-                    definitionEn = entry.definitionEn,
-                    definitionKo = entry.definitionKo,
-                ),
-            )
-        }
-        val koreanSenses = uiState.dictionaryEntries
-            .flatMap { it.senses }
-            .filter { it.definitionKo.isNotBlank() || !it.exampleKo.isNullOrBlank() }
-            .distinctBy { "${it.definitionKo}|${it.exampleKo.orEmpty()}" }
-            .take(6)
+        val displayedEntries = uiState.dictionaryEntries.take(3)
+        val entry = displayedEntries.first()
 
         AlertDialog(
             onDismissRequest = onDismissDictionaryDialog,
@@ -977,14 +978,59 @@ fun ReaderScreen(
                     modifier = Modifier.verticalScroll(dictionaryScroll),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    // IPA pronunciation
-                    val ipaText = entry.ipa
-                    if (!ipaText.isNullOrBlank()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                    if (!uiState.isKoreanDefinitionVisible) {
+                        Button(onClick = onRevealKoreanDefinition) {
+                            Text("한글 뜻 보기")
+                        }
+                    }
+
+                    displayedEntries.forEachIndexed { entryIndex, candidate ->
+                        val pairedSenses = candidate.senses.ifEmpty {
+                            listOf(
+                                DictionarySense(
+                                    definitionEn = candidate.definitionEn,
+                                    definitionKo = candidate.definitionKo,
+                                ),
+                            )
+                        }
+                        val displayedSenses = pairedSenses.take(2)
+                        val hasKoreanForEntry = displayedSenses.any {
+                            it.definitionKo.isNotBlank() || !it.exampleKo.isNullOrBlank()
+                        }
+
+                        if (entryIndex == 0) {
+                            HorizontalDivider(color = Color(0xFFE2E8F0))
+                        } else {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            HorizontalDivider(color = Color(0xFFE2E8F0))
+                        }
+
+                        if (displayedEntries.size > 1) {
+                            Text("의미 ${entryIndex + 1}", fontWeight = FontWeight.Bold)
+                        }
+
+                        Text(candidate.headword, fontWeight = FontWeight.SemiBold)
+                        if (candidate.lemma != candidate.headword) {
+                            Text(
+                                candidate.lemma,
+                                style = androidx.compose.ui.text.TextStyle(
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF64748B),
+                                ),
+                            )
+                        }
+                        val posText = candidate.pos
+                        if (!posText.isNullOrBlank()) {
+                            Text(
+                                posText,
+                                style = androidx.compose.ui.text.TextStyle(
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF64748B),
+                                ),
+                            )
+                        }
+                        val ipaText = candidate.ipa
+                        if (!ipaText.isNullOrBlank()) {
                             Text(
                                 text = "/$ipaText/",
                                 style = androidx.compose.ui.text.TextStyle(
@@ -994,39 +1040,28 @@ fun ReaderScreen(
                                     color = Color(0xFF64748B),
                                 ),
                             )
-                            IconButton(onClick = onSpeakWordFromDictionary, modifier = Modifier.size(34.dp)) {
-                                SpeakerGlyph(color = Color(0xFF6D4CCF), modifier = Modifier.size(20.dp))
+                        }
+
+                        Text("영영 사전", fontWeight = FontWeight.Bold)
+                        displayedSenses.forEachIndexed { idx, sense ->
+                            Text("${idx + 1}. ${sense.definitionEn}")
+                            if (!sense.exampleEn.isNullOrBlank()) {
+                                Text("• ${sense.exampleEn}", fontStyle = FontStyle.Italic)
                             }
-                        }
-                    }
-
-                    HorizontalDivider(color = Color(0xFFE2E8F0))
-
-                    Text("영영 사전", fontWeight = FontWeight.Bold)
-                    englishSenses.take(2).forEachIndexed { idx, sense ->
-                        Text("${idx + 1}. ${sense.definitionEn}")
-                        if (!sense.exampleEn.isNullOrBlank()) {
-                            Text("• ${sense.exampleEn}", fontStyle = FontStyle.Italic)
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                    }
-
-                    Text("영한 사전", fontWeight = FontWeight.Bold)
-                    if (!uiState.isKoreanDefinitionVisible) {
-                        Button(onClick = onRevealKoreanDefinition) {
-                            Text("한글 뜻 보기")
-                        }
-                    } else {
-                        if (koreanSenses.isEmpty()) {
-                            Text("영한 사전 데이터가 아직 없습니다.")
-                        } else {
-                            koreanSenses.forEachIndexed { idx, sense ->
-                                Text("${idx + 1}. ${sense.definitionKo.ifBlank { "(뜻 정보 없음)" }}")
+                            if (uiState.isKoreanDefinitionVisible) {
+                                Text(
+                                    "뜻: ${sense.definitionKo.ifBlank { "(뜻 정보 없음)" }}",
+                                    color = Color(0xFF334155),
+                                )
                                 if (!sense.exampleKo.isNullOrBlank()) {
                                     Text("• ${sense.exampleKo}", fontStyle = FontStyle.Italic)
                                 }
-                                Spacer(modifier = Modifier.height(4.dp))
                             }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
+                        if (uiState.isKoreanDefinitionVisible && !hasKoreanForEntry) {
+                            Text("영한 사전 데이터가 아직 없습니다.")
                         }
                     }
                 }
@@ -1489,15 +1524,15 @@ private fun mapTransformedViewToSource(
 }
 
 private fun speakerGroupLabel(speaker: LocalSpeakerProfile): String {
-    if (speaker.accentLabel == "선택 후보") {
-        return speaker.accentLabel
-    }
     val genderLabel = when (speaker.gender) {
         SpeakerGender.FEMALE -> "여성"
         SpeakerGender.MALE -> "남성"
         SpeakerGender.UNKNOWN -> ""
     }
     val accentLabel = speaker.accentLabel.ifBlank { "기본" }
+    if (accentLabel == genderLabel || genderLabel.isBlank()) {
+        return accentLabel
+    }
     return if (genderLabel.isBlank()) accentLabel else "$accentLabel · $genderLabel"
 }
 
@@ -1527,7 +1562,7 @@ private fun VoiceModelCard(
     val borderColor = if (selected) Color(0xFF2563EB) else Color(0xFFE2E8F0)
     val backgroundColor = if (selected) Color(0xFFEFF6FF) else Color(0xFFF8FAFC)
     Surface(
-        modifier = Modifier.width(196.dp),
+        modifier = Modifier.width(152.dp),
         onClick = onClick,
         shape = RoundedCornerShape(18.dp),
         color = backgroundColor,
@@ -1543,9 +1578,11 @@ private fun VoiceModelCard(
             Text(model.shortLabel, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
             Text(model.displayName, color = Color(0xFF475569), maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(
-                text = if (model.supportsSpeakerSelection) "화자 선택 가능" else "기본 화자 고정",
+                text = if (model.supportsSpeakerSelection) "프리셋 선택 가능" else "기본 화자 고정",
                 color = if (model.supportsSpeakerSelection) Color(0xFF1D4ED8) else Color(0xFF64748B),
                 fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -1588,7 +1625,8 @@ private fun currentVoiceSelectionSummary(
         model?.supportsSpeakerSelection == true -> "${speaker.accentLabel}/${speaker.displayLabel}"
         else -> "${speaker.accentLabel}/${speaker.gender.toKoreanLabel()}"
     }
-    return "[$modelLabel] $speakerLabel"
+    val description = speaker?.description?.takeIf { it.isNotBlank() }?.let { " - $it" }.orEmpty()
+    return "[$modelLabel] $speakerLabel$description"
 }
 
 private fun SpeakerGender.toKoreanLabel(): String {

@@ -12,9 +12,6 @@ PIPER_BUNDLED_MODEL_DIRS = {
     "lessac-low": "piper-en_US-lessac-low",
     "piper-en_US-libritts_r-medium": "piper-en_US-libritts_r-medium",
 }
-PIPER_PRESET_COUNT = 10
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True)
@@ -69,9 +66,6 @@ def prepare_piper_dir(source: Path, dest: Path, espeak_source: Path) -> None:
         shutil.rmtree(espeak_dest)
     shutil.copytree(espeak_source, espeak_dest)
 
-    write_speaker_manifest(dest / "speaker-manifest.tsv", config)
-
-
 def patch_onnx_metadata(onnx_module, model_path: Path, config: dict[str, Any]) -> None:
     model = onnx_module.load(str(model_path))
     existing = {entry.key: entry for entry in model.metadata_props}
@@ -100,26 +94,5 @@ def write_tokens(tokens_path: Path, config: dict[str, Any]) -> None:
             if symbol == "\n":
                 continue
             file.write(f"{symbol} {ids[0]}\n".encode("utf-8"))
-
-
-def write_speaker_manifest(manifest_path: Path, config: dict[str, Any]) -> None:
-    speaker_items = sorted((config.get("speaker_id_map") or {}).items(), key=lambda item: item[1])
-    preset_count = min(len(speaker_items), PIPER_PRESET_COUNT)
-    if preset_count == 0:
-        return
-    selected_items = []
-    if len(speaker_items) <= preset_count:
-        selected_items = speaker_items
-    else:
-        for index in range(preset_count):
-            mapped_index = round(index * (len(speaker_items) - 1) / (preset_count - 1))
-            selected_items.append(speaker_items[mapped_index])
-    with manifest_path.open("wb") as file:
-        file.write("speaker_id\tcode\tdisplay_label\taccent_label\tgender\n".encode("utf-8"))
-        for index, (code, speaker_id) in enumerate(selected_items):
-            batch = index // 5 + 1
-            file.write(f"{speaker_id}\t{code}\tSpeaker {speaker_id}\tPreset {batch}\tUNKNOWN\n".encode("utf-8"))
-
-
 if __name__ == "__main__":
     main()

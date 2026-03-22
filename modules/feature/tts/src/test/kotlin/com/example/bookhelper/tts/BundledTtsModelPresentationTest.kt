@@ -22,8 +22,11 @@ class BundledTtsModelPresentationTest {
         val model = BundledTtsModels.PiperEnUsLibriTtsRMedium
 
         assertEquals("다화자 모델", model.shortLabel)
-        assertEquals("화자 선택", model.displayName)
+        assertEquals("여성/남성 3개씩", model.displayName)
         assertTrue(model.supportsSpeakerSelection)
-        assertEquals("선택 후보/프리셋 1", "${model.speakers.first().accentLabel}/${model.speakers.first().displayLabel}")
+        assertEquals(6, model.speakers.size)
+        assertEquals("여성/표준형", "${model.speakers.first().accentLabel}/${model.speakers.first().displayLabel}")
+        assertEquals("맑고 정돈된 기본 톤", model.speakers.first().description)
+        assertEquals("신뢰형", model.speakers.first { it.gender == SpeakerGender.MALE }.displayLabel)
     }
 }

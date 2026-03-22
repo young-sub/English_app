@@ -390,12 +390,13 @@ class ReaderViewModel(
         settingsStore.saveLocalSpeakerId(normalizedSpeakerId)
         ttsManager.setLocalSpeakerId(normalizedSpeakerId)
 
-        val speakerName = model.speakers.firstOrNull { it.id == normalizedSpeakerId }?.displayLabel
+        val speaker = model.speakers.firstOrNull { it.id == normalizedSpeakerId }
+        val speakerName = speaker?.let { "${it.accentLabel} ${it.displayLabel}" }
             ?: normalizedSpeakerId.toString()
         _uiState.update {
             it.copy(
                 selectedSpeakerId = normalizedSpeakerId,
-                message = "화자 변경: $speakerName",
+                message = "화자 변경 완료: $speakerName",
             )
         }
 

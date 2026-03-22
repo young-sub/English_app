@@ -16,6 +16,7 @@ data class LocalSpeakerProfile(
     val displayLabel: String,
     val gender: SpeakerGender,
     val accentLabel: String,
+    val description: String = "",
 )
 
 enum class SpeakerGender {
@@ -49,7 +50,6 @@ val BundledTtsModel.isDownloadedModel: Boolean
 
 object BundledTtsModels {
     const val AssetRoot = "tts-models"
-    private const val PIPER_PRESET_COUNT = 10
 
     val KokoroEnV019 = BundledTtsModel(
         id = "kokoro-en-v0_19",
@@ -75,7 +75,7 @@ object BundledTtsModels {
 
     val PiperEnUsLibriTtsRMedium = BundledTtsModel(
         id = "piper-en_us-libritts_r-medium",
-        displayName = "화자 선택",
+        displayName = "여성/남성 3개씩",
         shortLabel = "다화자 모델",
         assetDirectory = "$AssetRoot/piper-en_US-libritts_r-medium",
         speakers = buildPiperPresetSpeakers(),
@@ -110,18 +110,55 @@ object BundledTtsModels {
     }
 
     private fun buildPiperPresetSpeakers(): List<LocalSpeakerProfile> {
-        return buildList {
-            repeat(PIPER_PRESET_COUNT) { index ->
-                add(
-                    LocalSpeakerProfile(
-                        id = index,
-                        code = "speaker_$index",
-                        displayLabel = "프리셋 ${index + 1}",
-                        gender = SpeakerGender.UNKNOWN,
-                        accentLabel = "선택 후보",
-                    ),
-                )
-            }
-        }
+        return listOf(
+            LocalSpeakerProfile(
+                id = 650,
+                code = "speaker_650",
+                displayLabel = "표준형",
+                gender = SpeakerGender.FEMALE,
+                accentLabel = "여성",
+                description = "맑고 정돈된 기본 톤",
+            ),
+            LocalSpeakerProfile(
+                id = 14,
+                code = "speaker_14",
+                displayLabel = "안내형",
+                gender = SpeakerGender.FEMALE,
+                accentLabel = "여성",
+                description = "또렷하고 산뜻한 전달 톤",
+            ),
+            LocalSpeakerProfile(
+                id = 551,
+                code = "speaker_551",
+                displayLabel = "친화형",
+                gender = SpeakerGender.FEMALE,
+                accentLabel = "여성",
+                description = "밝고 유연한 콘텐츠 톤",
+            ),
+            LocalSpeakerProfile(
+                id = 473,
+                code = "speaker_473",
+                displayLabel = "신뢰형",
+                gender = SpeakerGender.MALE,
+                accentLabel = "남성",
+                description = "안정적인 저음의 설명 톤",
+            ),
+            LocalSpeakerProfile(
+                id = 634,
+                code = "speaker_634",
+                displayLabel = "격식형",
+                gender = SpeakerGender.MALE,
+                accentLabel = "남성",
+                description = "단단하고 절제된 포멀 톤",
+            ),
+            LocalSpeakerProfile(
+                id = 5,
+                code = "speaker_5",
+                displayLabel = "낭독형",
+                gender = SpeakerGender.MALE,
+                accentLabel = "남성",
+                description = "담백하고 중후한 범용 톤",
+            ),
+        )
     }
 }

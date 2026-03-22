@@ -17,9 +17,14 @@ class BundledTtsModelInstaller(context: Context) {
         }
 
         return assetDirs.map { dirName ->
-            val model = knownByDirName[dirName] ?: createGenericModel(dirName)
-            val speakers = BundledSpeakerManifest.loadFromAssets(appContext.assets, model.assetDirectory)
-            if (speakers.isEmpty()) model else model.copy(speakers = speakers)
+            val knownModel = knownByDirName[dirName]
+            if (knownModel != null) {
+                knownModel
+            } else {
+                val model = createGenericModel(dirName)
+                val speakers = BundledSpeakerManifest.loadFromAssets(appContext.assets, model.assetDirectory)
+                if (speakers.isEmpty()) model else model.copy(speakers = speakers)
+            }
         }
     }
 

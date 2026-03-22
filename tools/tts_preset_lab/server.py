@@ -72,12 +72,14 @@ def load_text_presets() -> list[dict[str, str]]:
     quotes = json.loads(QUOTES_PATH.read_text(encoding="utf-8"))
     presets: list[dict[str, str]] = []
     for index, quote in enumerate(quotes, start=1):
-        label_source = quote.split(" -- ", maxsplit=1)[-1].strip()
-        label = f"{index:02d}. {label_source}"
+        compact = " ".join(quote.split())
+        label = compact[:56]
+        if len(compact) > 56:
+            label += "..."
         presets.append(
             {
                 "id": f"quote-{index:02d}",
-                "label": label,
+                "label": f"{index:02d}. {label}",
                 "text": quote,
             }
         )
@@ -394,6 +396,12 @@ class LabRequestHandler(SimpleHTTPRequestHandler):
 
     def log_message(self, format: str, *args: Any) -> None:
         return
+
+    def end_headers(self) -> None:
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
 
     def _send_json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
