@@ -6,7 +6,7 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Collect open dictionary data and build app dictionary seed asset."
+        description="Collect open dictionary data and build generated seed data plus app DB asset."
     )
     parser.add_argument("--max-wordnet-words", type=int, default=0)
     parser.add_argument("--max-kaikki-words", type=int, default=0)

@@ -3,7 +3,21 @@ import csv
 import json
 import re
 import sqlite3
+import sys
 from pathlib import Path
+
+
+def set_max_csv_field_size() -> None:
+    limit = sys.maxsize
+    while True:
+        try:
+            csv.field_size_limit(limit)
+            return
+        except OverflowError:
+            limit //= 10
+
+
+set_max_csv_field_size()
 
 
 def parse_args() -> argparse.Namespace:
@@ -18,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--seed-meta",
         type=Path,
-        default=Path("app/src/main/assets/dictionary_seed.meta.json"),
+        default=Path("tools/dictionary_etl/generated/dictionary_seed.meta.json"),
     )
     parser.add_argument(
         "--dictionary-db",

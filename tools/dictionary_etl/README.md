@@ -13,12 +13,14 @@ This folder contains a minimal ETL pipeline for generating offline dictionary as
 
 ## Output
 
-- `app/src/main/assets/databases/dictionary.db` (prebuilt dictionary Room DB)
+- `tools/dictionary_etl/generated/dictionary_seed.json` (generated seed JSON for ETL / auditing only)
+- `tools/dictionary_etl/generated/dictionary_seed.meta.json` (generated metadata for ETL / auditing only)
+- `app/src/main/assets/databases/dictionary.db` (prebuilt dictionary Room DB used at runtime)
 
 ## Run
 
 ```bash
-# One-shot (collect from web + build app asset)
+# One-shot (collect from web + build generated seed data and app DB asset)
 # Note: EN-KO policy defaults to Korean definitions required, Korean examples optional.
 python tools/dictionary_etl/build_open_dictionary_assets.py \
   --max-wordnet-words 0 \
@@ -52,7 +54,7 @@ python tools/dictionary_etl/generate_top_coverage_supplement.py \
   --cache-gz tools/dictionary_etl/cache/kaikki-english-words.jsonl.gz \
   --output-csv tools/dictionary_etl/raw/top_coverage_supplement.csv
 
-# 2) Build app asset JSON from raw CSV files
+# 2) Build generated seed JSON from raw CSV files
 python tools/dictionary_etl/build_dictionary_assets.py
 
 # 3) Run quality/performance/separation audit report
@@ -66,7 +68,7 @@ python tools/dictionary_etl/audit_dictionary_assets.py \
 ```
 
 The prebuilt SQLite DB is used by `DictionaryDatabase` as the only runtime dictionary source.
-Runtime reseeding from JSON is intentionally removed to keep startup predictable.
+Runtime reseeding from JSON is intentionally removed to keep startup predictable, so the generated seed JSON files stay outside `app/src/main/assets/` and are not packaged into the APK.
 The audit report is written to `tools/dictionary_etl/reports/dictionary_audit_report.json`.
 
 `build_dictionary_assets.py` merges every CSV in `tools/dictionary_etl/raw/`.

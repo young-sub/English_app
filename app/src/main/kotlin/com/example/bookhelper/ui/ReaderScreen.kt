@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -46,6 +47,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -809,6 +811,7 @@ fun ReaderScreen(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                                         verticalArrangement = Arrangement.spacedBy(10.dp),
+                                        maxItemsInEachRow = 2,
                                     ) {
                                         displayedModels.forEach { model ->
                                             VoiceModelCard(
@@ -827,8 +830,8 @@ fun ReaderScreen(
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(14.dp),
-                                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp),
                                     ) {
                                         Text(
                                             text = selectedModelSummary(selectedModel),
@@ -869,8 +872,9 @@ fun ReaderScreen(
                                             Text(groupLabel, fontWeight = FontWeight.SemiBold, color = Color(0xFF0F172A))
                                             FlowRow(
                                                 modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                                maxItemsInEachRow = 3,
                                             ) {
                                                 speakers.forEach { speaker ->
                                                     SpeakerChip(
@@ -1670,7 +1674,7 @@ private fun VoiceModelCard(
     val borderColor = if (selected) Color(0xFF2563EB) else Color(0xFFE2E8F0)
     val backgroundColor = if (selected) Color(0xFFEFF6FF) else Color(0xFFF8FAFC)
     Surface(
-        modifier = Modifier.width(152.dp),
+        modifier = Modifier.width(140.dp),
         onClick = onClick,
         shape = RoundedCornerShape(18.dp),
         color = backgroundColor,
@@ -1680,17 +1684,18 @@ private fun VoiceModelCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .border(1.dp, borderColor, RoundedCornerShape(18.dp))
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(model.shortLabel, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
-            Text(model.displayName, color = Color(0xFF475569), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(model.shortLabel, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A), fontSize = 14.sp)
+            Text(model.displayName, color = Color(0xFF475569), maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
             Text(
                 text = if (model.supportsSpeakerSelection) "프리셋 선택 가능" else "기본 화자 고정",
                 color = if (model.supportsSpeakerSelection) Color(0xFF1D4ED8) else Color(0xFF64748B),
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                fontSize = 12.sp,
             )
         }
     }
@@ -1704,12 +1709,22 @@ private fun SpeakerChip(
 ) {
     val label = speaker.displayLabel
     if (selected) {
-        Button(onClick = onClick) {
-            Text(label)
+        Button(
+            onClick = onClick,
+            modifier = Modifier.defaultMinSize(minHeight = 34.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            shape = RoundedCornerShape(999.dp),
+        ) {
+            Text(label, fontSize = 13.sp)
         }
     } else {
-        OutlinedButton(onClick = onClick) {
-            Text(label)
+        OutlinedButton(
+            onClick = onClick,
+            modifier = Modifier.defaultMinSize(minHeight = 34.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            shape = RoundedCornerShape(999.dp),
+        ) {
+            Text(label, fontSize = 13.sp)
         }
     }
 }

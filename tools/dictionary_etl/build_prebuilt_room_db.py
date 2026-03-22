@@ -7,12 +7,12 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build prepackaged Room SQLite DB from dictionary_seed.json"
+        description="Build prepackaged Room SQLite DB from generated dictionary_seed.json"
     )
     parser.add_argument(
         "--input-json",
         type=Path,
-        default=Path("app/src/main/assets/dictionary_seed.json"),
+        default=Path("tools/dictionary_etl/generated/dictionary_seed.json"),
     )
     parser.add_argument(
         "--output-db",

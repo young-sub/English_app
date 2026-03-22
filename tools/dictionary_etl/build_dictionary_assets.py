@@ -1,6 +1,7 @@
 import csv
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 
@@ -15,6 +16,19 @@ ALLOWED_LICENSES = {
     "wordnet-3.0",
     "internal-dev",
 }
+
+
+def set_max_csv_field_size() -> None:
+    limit = sys.maxsize
+    while True:
+        try:
+            csv.field_size_limit(limit)
+            return
+        except OverflowError:
+            limit //= 10
+
+
+set_max_csv_field_size()
 
 
 def is_allowed_license(license_name: str) -> bool:
@@ -106,6 +120,6 @@ def build(raw_dir: Path, output_json: Path) -> None:
 if __name__ == "__main__":
     repo_root = Path(__file__).resolve().parents[2]
     raw_dir = repo_root / "tools" / "dictionary_etl" / "raw"
-    output_json = repo_root / "app" / "src" / "main" / "assets" / "dictionary_seed.json"
+    output_json = repo_root / "tools" / "dictionary_etl" / "generated" / "dictionary_seed.json"
     build(raw_dir, output_json)
     print(f"Wrote {output_json}")

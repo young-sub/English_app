@@ -23,3 +23,6 @@ tools/dictionary_etl/raw/
 # Local model evaluation artifacts
 *.zip
 *.part
+.sisyphus/
+tts_preset_lab/
+nul
