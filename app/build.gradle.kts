@@ -182,6 +182,7 @@ dependencies {
     implementation("androidx.camera:camera-view:1.3.4")
 
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("org.opencv:opencv:4.11.0")
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")

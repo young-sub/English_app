@@ -93,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.bookhelper.camera.BookPageAnalyzer
+import com.example.bookhelper.camera.BookPageStillImagePreprocessor
 import com.example.bookhelper.camera.CameraBinder
 import com.example.bookhelper.camera.FrameGate
 import com.example.bookhelper.camera.StillImageAnalyzer
@@ -188,6 +189,7 @@ fun ReaderScreen(
     val latestSourceWidth by rememberUpdatedState(uiState.sourceWidth)
     val latestSourceHeight by rememberUpdatedState(uiState.sourceHeight)
     val stillImageAnalyzer = remember { StillImageAnalyzer() }
+    val stillImagePreprocessor = remember { BookPageStillImagePreprocessor() }
 
     LaunchedEffect(uiState.sourceWidth, uiState.sourceHeight) {
         dragStart = null
@@ -279,9 +281,12 @@ fun ReaderScreen(
                 }
                 return@launch
             }
-            capturedBitmap = selectedBitmap
-            stillImageAnalyzer.analyze(selectedBitmap) { result ->
-                if (analysisToken == activeToken && isSnapshotMode && capturedBitmap === selectedBitmap) {
+            val processedBitmap = withContext(Dispatchers.Default) {
+                stillImagePreprocessor.preprocess(selectedBitmap)
+            }
+            capturedBitmap = processedBitmap
+            stillImageAnalyzer.analyze(processedBitmap) { result ->
+                if (analysisToken == activeToken && isSnapshotMode && capturedBitmap === processedBitmap) {
                     onFrameOcrState(result)
                     isSnapshotProcessing = false
                 }
@@ -312,17 +317,23 @@ fun ReaderScreen(
 
     val captureSnapshot = capture@{
         val snapshot = previewView.bitmap?.copy(Bitmap.Config.ARGB_8888, false) ?: return@capture
-        capturedBitmap = snapshot
         isSnapshotMode = true
         isSnapshotProcessing = true
         snapshotOriginLabel = "촬영"
+        capturedBitmap = null
         analysisToken += 1L
         val activeToken = analysisToken
         resetAnalyzedFrame()
-        stillImageAnalyzer.analyze(snapshot) { result ->
-            if (analysisToken == activeToken && isSnapshotMode && capturedBitmap === snapshot) {
-                onFrameOcrState(result)
-                isSnapshotProcessing = false
+        coroutineScope.launch {
+            val processedSnapshot = withContext(Dispatchers.Default) {
+                stillImagePreprocessor.preprocess(snapshot)
+            }
+            capturedBitmap = processedSnapshot
+            stillImageAnalyzer.analyze(processedSnapshot) { result ->
+                if (analysisToken == activeToken && isSnapshotMode && capturedBitmap === processedSnapshot) {
+                    onFrameOcrState(result)
+                    isSnapshotProcessing = false
+                }
             }
         }
     }
