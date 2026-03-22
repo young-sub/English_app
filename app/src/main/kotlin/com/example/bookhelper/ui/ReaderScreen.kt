@@ -1394,13 +1394,13 @@ private fun SelectionActionButton(
 ) {
     val isReplayEnabled = !isSpeaking && canReplaySelection
     val backgroundColor = when {
-        isSpeaking -> Color(0xDCEE4444)
-        isReplayEnabled -> Color(0xDD16A34A)
+        isSpeaking -> Color(0xDDBB4D5D)
+        isReplayEnabled -> Color(0xDD3F8F6B)
         else -> Color(0xAA64748B)
     }
     val borderColor = when {
-        isSpeaking -> Color(0xFFFFE2E2)
-        isReplayEnabled -> Color(0xFFDCFCE7)
+        isSpeaking -> Color(0xFFF1D6DC)
+        isReplayEnabled -> Color(0xFFD4EADF)
         else -> Color(0xFFCBD5E1)
     }
     val contentDescription = if (isSpeaking) "읽기 중지" else "선택 영역 다시 읽기"
