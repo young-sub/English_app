@@ -238,6 +238,38 @@ class AndroidTtsManager(context: Context) : TextToSpeech.OnInitListener {
         return result
     }
 
+    fun speakSystemOnly(
+        text: String,
+        utteranceId: String = "sentence",
+        queueMode: Int = TextToSpeech.QUEUE_FLUSH,
+        onResult: ((TtsSpeakResult) -> Unit)? = null,
+    ): TtsSpeakResult {
+        val normalizedText = text.trim()
+        if (normalizedText.isBlank()) {
+            val result = TtsSpeakResult(
+                accepted = false,
+                route = TtsRoute.NONE,
+                reason = "blank-text",
+            )
+            onResult?.invoke(result)
+            return result
+        }
+
+        val systemAccepted = speakWithSystemEngine(
+            text = normalizedText,
+            utteranceId = utteranceId,
+            queueMode = queueMode,
+            waitForReady = false,
+        )
+        val result = TtsSpeakResult(
+            accepted = systemAccepted,
+            route = if (systemAccepted) TtsRoute.SYSTEM_TTS else TtsRoute.NONE,
+            reason = if (systemAccepted) "system-only" else "system-tts-unavailable",
+        )
+        onResult?.invoke(result)
+        return result
+    }
+
     fun stop() {
         localModelTtsEngine.stop()
         tts?.stop()
@@ -355,9 +387,15 @@ class AndroidTtsManager(context: Context) : TextToSpeech.OnInitListener {
         text: String,
         utteranceId: String,
         queueMode: Int,
+        waitForReady: Boolean = true,
     ): Boolean {
-        if (!isReady && !awaitReady(SYSTEM_TTS_READY_WAIT_MS)) {
-            return false
+        if (!isReady) {
+            if (!waitForReady) {
+                return false
+            }
+            if (!awaitReady(SYSTEM_TTS_READY_WAIT_MS)) {
+                return false
+            }
         }
         val currentTts = tts ?: return false
         val result = currentTts.speak(text, queueMode, Bundle(), utteranceId)
